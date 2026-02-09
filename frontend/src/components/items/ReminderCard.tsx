@@ -5,6 +5,7 @@ import { Bell, Pencil, X, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Reminder } from "@/lib/api";
+import { humanize, repeatLabel } from "@/lib/format";
 
 interface ReminderCardProps {
   reminder: Reminder;
@@ -31,17 +32,6 @@ export function ReminderCard({
   onClose,
   showItemLink = true,
 }: ReminderCardProps) {
-  const repeatLabel = (repeat: string) => {
-    const labels: Record<string, string> = {
-      weekly: "Weekly",
-      monthly: "Monthly",
-      quarterly: "Quarterly",
-      yearly: "Yearly",
-      biennial: "Every 2y",
-    };
-    return labels[repeat] || repeat;
-  };
-
   // Compact variant for RemindersPanel
   if (variant === "compact") {
     const content = (
@@ -55,7 +45,7 @@ export function ReminderCard({
           </p>
           <p className="text-xs text-gray-500 truncate">
             {reminder.field_label} &middot;{" "}
-            {reminder.subcategory.replace(/_/g, " ")}
+            {humanize(reminder.subcategory)}
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -158,7 +148,7 @@ export function ReminderCard({
             <p className="font-medium text-gray-900">{reminder.item_name}</p>
             <p className="text-sm text-gray-500">
               {reminder.field_label} &middot;{" "}
-              {reminder.subcategory.replace(/_/g, " ")}
+              {humanize(reminder.subcategory)}
             </p>
             {reminder.repeat && reminder.repeat !== "none" && (
               <span className="inline-flex items-center gap-1 text-gray-400 text-xs mt-0.5">

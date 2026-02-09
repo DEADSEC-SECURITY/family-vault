@@ -23,20 +23,12 @@ from app.auth.models import User
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.items.models import Item
-from app.orgs.service import get_user_orgs
+from app.orgs.service import get_active_org_id
 from app.people.models import Person
 from app.vehicles.models import ItemVehicle, Vehicle
 from app.vehicles.schemas import AssignVehicle, VehicleCreate, VehicleOut, VehicleUpdate
 
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
-
-
-def _get_active_org_id(user: User, db: DBSession) -> str:
-    """Get the first org the user belongs to."""
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0].id
 
 
 def _vehicle_to_out(vehicle: Vehicle) -> VehicleOut:
@@ -65,7 +57,7 @@ def list_vehicles(
     db: DBSession = Depends(get_db),
 ):
     """List all vehicles in the user's org."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     vehicles = (
         db.query(Vehicle)
         .options(joinedload(Vehicle.owner), joinedload(Vehicle.primary_driver))
@@ -83,7 +75,7 @@ def create_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Create a new vehicle in the user's org."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Validate person IDs if provided
     if data.owner_id:
@@ -138,7 +130,7 @@ def get_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Get a single vehicle by ID."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     vehicle = (
         db.query(Vehicle)
         .options(joinedload(Vehicle.owner), joinedload(Vehicle.primary_driver))
@@ -159,7 +151,7 @@ def update_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Update a vehicle's details."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     vehicle = (
         db.query(Vehicle)
         .filter(Vehicle.id == vehicle_id, Vehicle.org_id == org_id)
@@ -223,7 +215,7 @@ def delete_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Delete a vehicle from the org. Cascades to item_vehicles."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     vehicle = (
         db.query(Vehicle)
         .filter(Vehicle.id == vehicle_id, Vehicle.org_id == org_id)
@@ -243,7 +235,7 @@ def get_vehicle_policies(
     db: DBSession = Depends(get_db),
 ):
     """Get all insurance items (policies) associated with this vehicle."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify vehicle exists and belongs to org
     vehicle = (
@@ -291,7 +283,7 @@ def list_item_vehicles(
     db: DBSession = Depends(get_db),
 ):
     """List vehicles assigned to a specific item."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item belongs to user's org
     item = db.query(Item).filter(Item.id == item_id, Item.org_id == org_id).first()
@@ -317,7 +309,7 @@ def assign_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Assign an existing org vehicle to an item."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item belongs to user's org
     item = db.query(Item).filter(Item.id == item_id, Item.org_id == org_id).first()
@@ -365,7 +357,7 @@ def unassign_vehicle(
     db: DBSession = Depends(get_db),
 ):
     """Unassign a vehicle from an item (does not delete the vehicle)."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     link = (
         db.query(ItemVehicle)
         .filter(

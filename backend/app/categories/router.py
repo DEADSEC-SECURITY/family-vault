@@ -14,16 +14,9 @@ from app.categories.schemas import (
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.items.models import Item
-from app.orgs.service import get_user_orgs
+from app.orgs.service import get_active_org_id
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
-
-
-def _get_active_org_id(user: User, db: DBSession) -> str:
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0].id
 
 
 def _get_all_fields(sub: dict) -> list[dict]:
@@ -47,7 +40,7 @@ def list_categories(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Get item counts per category
     counts = dict(
@@ -81,7 +74,7 @@ def get_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Get item counts per subcategory
     counts = dict(

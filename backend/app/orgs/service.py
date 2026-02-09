@@ -82,6 +82,29 @@ def get_user_orgs(db: DBSession, user_id: str) -> list[Organization]:
     )
 
 
+def get_active_org(user, db: DBSession) -> "Organization":
+    """Get the first org the user belongs to (full object).
+
+    Shared helper used by routers that need the full org (e.g. encryption key).
+    Raises HTTPException 400 if the user has no organization.
+    """
+    from fastapi import HTTPException
+
+    orgs = get_user_orgs(db, user.id)
+    if not orgs:
+        raise HTTPException(status_code=400, detail="No organization found")
+    return orgs[0]
+
+
+def get_active_org_id(user, db: DBSession) -> str:
+    """Get the first org ID the user belongs to.
+
+    Shared helper used by all routers that need org-scoped queries.
+    Raises HTTPException 400 if the user has no organization.
+    """
+    return get_active_org(user, db).id
+
+
 def get_user_membership(
     db: DBSession, user_id: str, org_id: str
 ) -> OrgMembership | None:

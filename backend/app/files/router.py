@@ -14,7 +14,7 @@ from app.files.schemas import FileUploadResponse
 from app.files.storage import get_storage
 from app.items.models import Item
 from app.orgs.models import Organization
-from app.orgs.service import get_org_by_id, get_org_encryption_key, get_user_orgs
+from app.orgs.service import get_active_org, get_org_by_id, get_org_encryption_key
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -30,13 +30,6 @@ ALLOWED_MIME_TYPES = {
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
-def _get_active_org(user: User, db: DBSession) -> Organization:
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0]
-
-
 @router.post("/upload", response_model=FileUploadResponse, status_code=201)
 async def upload_file(
     file: UploadFile = File(...),
@@ -45,7 +38,7 @@ async def upload_file(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org = _get_active_org(user, db)
+    org = get_active_org(user, db)
 
     # Verify item belongs to org
     item = (
@@ -113,7 +106,7 @@ def download_file(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org = _get_active_org(user, db)
+    org = get_active_org(user, db)
 
     attachment = (
         db.query(FileAttachment)
@@ -154,7 +147,7 @@ def delete_file(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org = _get_active_org(user, db)
+    org = get_active_org(user, db)
 
     attachment = (
         db.query(FileAttachment)

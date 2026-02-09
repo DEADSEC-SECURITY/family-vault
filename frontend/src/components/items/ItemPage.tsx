@@ -126,6 +126,7 @@ import { VehiclesSection } from "./VehiclesSection";
 import ReminderEditDialog from "./ReminderEditDialog";
 import { ReminderCard } from "./ReminderCard";
 import { createFileFromBlob } from "@/lib/image-utils";
+import { REPEAT_OPTIONS, repeatLabel, titleCase } from "@/lib/format";
 
 const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   ids: IdCard,
@@ -1429,18 +1430,6 @@ function NotesTab({
  * (Customer Care, TTY, Prior Authorization, etc.) in the label input dropdown.
  */
 
-const REPEAT_OPTIONS = [
-  { value: "none", label: "Don't repeat" },
-  { value: "weekly", label: "Every week" },
-  { value: "monthly", label: "Every month" },
-  { value: "quarterly", label: "Every 3 months" },
-  { value: "yearly", label: "Every year" },
-] as const;
-
-function repeatLabel(val: string | null | undefined) {
-  if (!val || val === "none") return null;
-  return REPEAT_OPTIONS.find((o) => o.value === val)?.label ?? val;
-}
 
 interface PendingReminder {
   title: string;

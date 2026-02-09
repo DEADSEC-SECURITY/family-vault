@@ -5,7 +5,7 @@ from app.auth.models import User
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.items.models import Item
-from app.orgs.service import get_user_orgs
+from app.orgs.service import get_active_org_id
 from app.reminders.models import CustomReminder
 from app.reminders.schemas import CustomReminderCreate, CustomReminderUpdate
 from app.reminders.service import (
@@ -16,19 +16,12 @@ from app.reminders.service import (
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
 
-def _get_active_org_id(user: User, db: DBSession) -> str:
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0].id
-
-
 @router.get("")
 def list_reminders(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     return get_reminders(db, org_id, days_ahead=90)
 
 
@@ -37,7 +30,7 @@ def list_overdue(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     all_reminders = get_reminders(db, org_id, days_ahead=0)
     return [r for r in all_reminders if r["is_overdue"]]
 
@@ -51,7 +44,7 @@ def list_custom_reminders(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     return get_all_reminders_for_item(db, item_id, org_id)
 
 
@@ -61,7 +54,7 @@ def create_custom_reminder(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item belongs to user's org
     item = (
@@ -115,7 +108,7 @@ def update_custom_reminder(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     reminder = (
         db.query(CustomReminder)
         .filter(
@@ -177,7 +170,7 @@ def delete_custom_reminder(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     reminder = (
         db.query(CustomReminder)
         .filter(
@@ -204,7 +197,7 @@ def generate_business_reminders(
     Automatically reads has_employees and tax_election from the item's fields.
     Regenerates reminders each time it's called (deletes old auto-generated ones first).
     """
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item exists and belongs to org
     item = (

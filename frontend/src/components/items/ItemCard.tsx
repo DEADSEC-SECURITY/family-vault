@@ -1,177 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { Building, Building2, Car, FileText, Heart, Home, Paperclip, Shield, IdCard, Plane, Globe, BadgeCheck, Users, User, FileBadge, FileSpreadsheet, Briefcase } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Item } from "@/lib/api";
+import { formatDate, getFieldValue } from "@/lib/format";
+import { SubcategoryIcon } from "./SubcategoryIcon";
 
 interface ItemCardProps {
   item: Item;
   categorySlug: string;
-}
-
-// Component to render provider icon based on insurance type
-function ProviderLogo({ provider, subcategory }: { provider: string; subcategory: string }) {
-  let icon;
-  let bgColor = "bg-blue-100";
-  let iconColor = "text-blue-600";
-
-  switch (subcategory) {
-    case "auto_insurance":
-      icon = <Car className="w-6 h-6" />;
-      bgColor = "bg-blue-100";
-      iconColor = "text-blue-600";
-      break;
-    case "health_insurance":
-      icon = <Heart className="w-6 h-6" />;
-      bgColor = "bg-red-100";
-      iconColor = "text-red-600";
-      break;
-    case "renters_insurance":
-      icon = <Home className="w-6 h-6" />;
-      bgColor = "bg-orange-100";
-      iconColor = "text-orange-600";
-      break;
-    case "life_insurance":
-      icon = <Heart className="w-6 h-6" />;
-      bgColor = "bg-purple-100";
-      iconColor = "text-purple-600";
-      break;
-    default:
-      icon = <Shield className="w-6 h-6" />;
-      bgColor = "bg-green-100";
-      iconColor = "text-green-600";
-  }
-
-  return (
-    <div className={`w-12 h-12 flex-shrink-0 rounded-lg ${bgColor} flex items-center justify-center`}>
-      <div className={iconColor}>{icon}</div>
-    </div>
-  );
-}
-
-// Component to render ID icon based on ID type
-function IDIcon({ subcategory }: { subcategory: string }) {
-  let icon;
-  let bgColor = "bg-blue-100";
-  let iconColor = "text-blue-600";
-
-  switch (subcategory) {
-    case "drivers_license":
-      icon = <IdCard className="w-6 h-6" />;
-      bgColor = "bg-blue-100";
-      iconColor = "text-blue-600";
-      break;
-    case "passport":
-      icon = <Plane className="w-6 h-6" />;
-      bgColor = "bg-indigo-100";
-      iconColor = "text-indigo-600";
-      break;
-    case "visa":
-      icon = <Globe className="w-6 h-6" />;
-      bgColor = "bg-teal-100";
-      iconColor = "text-teal-600";
-      break;
-    case "social_security":
-      icon = <Shield className="w-6 h-6" />;
-      bgColor = "bg-gray-100";
-      iconColor = "text-gray-600";
-      break;
-    case "birth_certificate":
-      icon = <FileText className="w-6 h-6" />;
-      bgColor = "bg-pink-100";
-      iconColor = "text-pink-600";
-      break;
-    case "custom_id":
-      icon = <BadgeCheck className="w-6 h-6" />;
-      bgColor = "bg-slate-100";
-      iconColor = "text-slate-600";
-      break;
-    default:
-      icon = <IdCard className="w-6 h-6" />;
-      bgColor = "bg-blue-100";
-      iconColor = "text-blue-600";
-  }
-
-  return (
-    <div className={`w-12 h-12 flex-shrink-0 rounded-lg ${bgColor} flex items-center justify-center`}>
-      <div className={iconColor}>{icon}</div>
-    </div>
-  );
-}
-
-// Component to render business icon based on business type
-function BusinessIcon({ subcategory }: { subcategory: string }) {
-  let icon;
-  let bgColor = "bg-blue-100";
-  let iconColor = "text-blue-600";
-
-  switch (subcategory) {
-    case "llc":
-      icon = <Building className="w-6 h-6" />;
-      bgColor = "bg-blue-100";
-      iconColor = "text-blue-600";
-      break;
-    case "corporation":
-      icon = <Building2 className="w-6 h-6" />;
-      bgColor = "bg-indigo-100";
-      iconColor = "text-indigo-600";
-      break;
-    case "partnership":
-      icon = <Users className="w-6 h-6" />;
-      bgColor = "bg-purple-100";
-      iconColor = "text-purple-600";
-      break;
-    case "sole_proprietorship":
-      icon = <User className="w-6 h-6" />;
-      bgColor = "bg-teal-100";
-      iconColor = "text-teal-600";
-      break;
-    case "business_license":
-      icon = <FileBadge className="w-6 h-6" />;
-      bgColor = "bg-green-100";
-      iconColor = "text-green-600";
-      break;
-    case "business_insurance":
-      icon = <Shield className="w-6 h-6" />;
-      bgColor = "bg-amber-100";
-      iconColor = "text-amber-600";
-      break;
-    case "tax_document":
-      icon = <FileSpreadsheet className="w-6 h-6" />;
-      bgColor = "bg-red-100";
-      iconColor = "text-red-600";
-      break;
-    default:
-      icon = <Briefcase className="w-6 h-6" />;
-      bgColor = "bg-gray-100";
-      iconColor = "text-gray-600";
-  }
-
-  return (
-    <div className={`w-12 h-12 flex-shrink-0 rounded-lg ${bgColor} flex items-center justify-center`}>
-      <div className={iconColor}>{icon}</div>
-    </div>
-  );
-}
-
-// Helper to get field value by key
-function getFieldValue(item: Item, fieldKey: string): string | null {
-  const field = item.fields.find((f) => f.field_key === fieldKey);
-  return field?.field_value || null;
-}
-
-// Helper to format date
-function formatDate(dateStr: string | null): string | null {
-  if (!dateStr) return null;
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  } catch {
-    return dateStr;
-  }
 }
 
 // Helper to calculate annual premium based on coverage period
@@ -274,7 +113,7 @@ export function ItemCard({ item, categorySlug }: ItemCardProps) {
           <CardContent className="p-4">
             {/* Top row: Icon + Item Name + Badges */}
             <div className="flex items-start gap-3 mb-2">
-              <IDIcon subcategory={item.subcategory} />
+              <SubcategoryIcon subcategory={item.subcategory} category="ids" />
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
@@ -420,13 +259,7 @@ export function ItemCard({ item, categorySlug }: ItemCardProps) {
           <CardContent className="p-4">
             {/* Top row: Icon + Item Name + Badges */}
             <div className="flex items-start gap-3 mb-2">
-              {provider ? (
-                <ProviderLogo provider={provider} subcategory={item.subcategory} />
-              ) : (
-                <div className="w-12 h-12 flex-shrink-0 rounded-lg bg-gray-200 flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-gray-500" />
-                </div>
-              )}
+              <SubcategoryIcon subcategory={item.subcategory} category="insurance" />
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
@@ -562,7 +395,7 @@ export function ItemCard({ item, categorySlug }: ItemCardProps) {
           <CardContent className="p-4">
             {/* Top row: Icon + Item Name + Badges */}
             <div className="flex items-start gap-3 mb-2">
-              <BusinessIcon subcategory={item.subcategory} />
+              <SubcategoryIcon subcategory={item.subcategory} category="business" />
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">

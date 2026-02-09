@@ -17,19 +17,11 @@ from sqlalchemy.orm import Session as DBSession
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.orgs.service import get_user_orgs
+from app.orgs.service import get_active_org_id
 from app.people.models import Person
 from app.people.schemas import PersonCreate, PersonOut, PersonUpdate
 
 router = APIRouter(prefix="/api/people", tags=["people"])
-
-
-def _get_active_org_id(user: User, db: DBSession) -> str:
-    """Get the first org the user belongs to."""
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0].id
 
 
 @router.get("", response_model=list[PersonOut])
@@ -38,7 +30,7 @@ def list_people(
     db: DBSession = Depends(get_db),
 ):
     """List all people in the user's org."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     people = (
         db.query(Person)
         .filter(Person.org_id == org_id)
@@ -55,7 +47,7 @@ def get_person(
     db: DBSession = Depends(get_db),
 ):
     """Get a single person by ID."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     person = (
         db.query(Person)
         .filter(Person.id == person_id, Person.org_id == org_id)
@@ -73,7 +65,7 @@ def create_person(
     db: DBSession = Depends(get_db),
 ):
     """Create a new person in the user's org."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     person = Person(
         org_id=org_id,
         first_name=data.first_name,
@@ -100,7 +92,7 @@ def update_person(
     db: DBSession = Depends(get_db),
 ):
     """Update a person's details."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     person = (
         db.query(Person)
         .filter(Person.id == person_id, Person.org_id == org_id)
@@ -141,7 +133,7 @@ def delete_person(
     db: DBSession = Depends(get_db),
 ):
     """Delete a person from the org."""
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     person = (
         db.query(Person)
         .filter(Person.id == person_id, Person.org_id == org_id)

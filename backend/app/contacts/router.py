@@ -28,7 +28,7 @@ from app.contacts.schemas import (
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.items.models import Item
-from app.orgs.service import get_user_orgs
+from app.orgs.service import get_active_org_id
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -53,20 +53,13 @@ def _compose_address_value(
     return ", ".join(parts) if parts else ""
 
 
-def _get_active_org_id(user: User, db: DBSession) -> str:
-    orgs = get_user_orgs(db, user.id)
-    if not orgs:
-        raise HTTPException(status_code=400, detail="No organization found")
-    return orgs[0].id
-
-
 @router.get("", response_model=list[ItemContactOut])
 def list_contacts_for_item(
     item_id: str = Query(...),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     contacts = (
         db.query(ItemContact)
         .filter(
@@ -85,7 +78,7 @@ def create_contact(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item belongs to user's org
     item = (
@@ -139,7 +132,7 @@ def reorder_contacts(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
 
     # Verify item belongs to user's org
     item = (
@@ -167,7 +160,7 @@ def update_contact(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     contact = (
         db.query(ItemContact)
         .filter(
@@ -230,7 +223,7 @@ def delete_contact(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    org_id = _get_active_org_id(user, db)
+    org_id = get_active_org_id(user, db)
     contact = (
         db.query(ItemContact)
         .filter(
