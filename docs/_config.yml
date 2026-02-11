@@ -1,0 +1,30 @@
+title: Family Vault Docs
+description: Technical documentation for the Family Vault self-hosted family document vault.
+url: ""
+baseurl: ""
+
+remote_theme: just-the-docs/just-the-docs
+
+color_scheme: light
+
+aux_links:
+  "GitHub":
+    - "https://github.com/yourusername/family-vault"
+
+nav_sort: case_insensitive
+search_enabled: true
+
+heading_anchors: true
+
+footer_content: "Family Vault &mdash; Self-hosted family document vault. Built with Next.js, FastAPI, and PostgreSQL."
+
+callouts:
+  warning:
+    title: Warning
+    color: red
+  note:
+    title: Note
+    color: blue
+  tip:
+    title: Tip
+    color: green

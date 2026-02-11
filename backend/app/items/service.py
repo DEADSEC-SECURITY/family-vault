@@ -10,8 +10,17 @@ from app.coverage.models import CoveragePlanLimit, CoverageRow, InNetworkProvide
 from app.files.encryption import decrypt_field, encrypt_field
 from app.items.models import Item, ItemFieldValue
 from app.items.schemas import FieldValueIn, FieldValueOut, FileOut, ItemResponse
+from app.orgs.models import Organization
 from app.orgs.service import get_org_encryption_key
 from app.vehicles.models import ItemVehicle
+
+
+def _get_org_key(db: DBSession, org_id: str) -> bytes:
+    """Fetch org and return its decrypted encryption key. Raises 404 if not found."""
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return get_org_encryption_key(org)
 
 
 def _get_all_fields(sub_def: dict) -> list[dict]:
@@ -67,17 +76,18 @@ def _validate_fields(sub_def: dict, fields: list[FieldValueIn], check_required: 
             )
 
 
-def _item_to_response(item: Item, db: DBSession) -> ItemResponse:
-    # Get org encryption key for decrypting sensitive fields
-    from app.orgs.models import Organization
-    org = db.query(Organization).filter(Organization.id == item.org_id).first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    org_key = get_org_encryption_key(org)
+def _get_subcategory_def(category: str, subcategory: str) -> dict | None:
+    """Look up subcategory definition without raising. Returns None if not found."""
+    cat = CATEGORIES.get(category)
+    if not cat:
+        return None
+    return cat["subcategories"].get(subcategory)
 
+
+def _item_to_response(item: Item, org_key: bytes) -> ItemResponse:
     # Get subcategory definition to identify encrypted fields
-    sub_def = _validate_category(item.category, item.subcategory)
-    encrypted_fields = _get_encrypted_fields(sub_def)
+    sub_def = _get_subcategory_def(item.category, item.subcategory)
+    encrypted_fields = _get_encrypted_fields(sub_def) if sub_def else set()
 
     # Decrypt field values that are encrypted
     decrypted_fields = []
@@ -137,12 +147,8 @@ def create_item(
     # Build field type lookup
     field_types = {f["key"]: f["type"] for f in _get_all_fields(sub_def)}
 
-    # Get org encryption key for encrypting sensitive fields
-    from app.orgs.models import Organization
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    org_key = get_org_encryption_key(org)
+    # Get org encryption key once for encrypting sensitive fields
+    org_key = _get_org_key(db, org_id)
     encrypted_fields = _get_encrypted_fields(sub_def)
 
     item = Item(
@@ -185,7 +191,7 @@ def create_item(
             elif field.field_key == "formation_date" and field.field_value:
                 try:
                     formation_date = datetime.fromisoformat(field.field_value).date()
-                except:
+                except (ValueError, TypeError):
                     pass
 
         # Generate reminders (users can delete ones they don't need)
@@ -203,7 +209,7 @@ def create_item(
 
     db.commit()
     db.refresh(item)
-    return _item_to_response(item, db)
+    return _item_to_response(item, org_key)
 
 
 def get_item(
@@ -219,7 +225,8 @@ def get_item(
     item = query.first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return _item_to_response(item, db)
+    org_key = _get_org_key(db, org_id)
+    return _item_to_response(item, org_key)
 
 
 def list_items(
@@ -257,7 +264,9 @@ def list_items(
             seen.add(item.id)
             items.append(item)
 
-    return [_item_to_response(i, db) for i in items], total
+    # Fetch org key once for all items (fixes N+1 query)
+    org_key = _get_org_key(db, org_id)
+    return [_item_to_response(i, org_key) for i in items], total
 
 
 def update_item(
@@ -282,18 +291,16 @@ def update_item(
     if notes is not None:
         item.notes = notes
 
+    # Get org key once — used for both field encryption and response decryption
+    org_key = _get_org_key(db, org_id)
+
     if fields is not None:
-        sub_def = _validate_category(item.category, item.subcategory)
+        sub_def = _get_subcategory_def(item.category, item.subcategory)
+        if not sub_def:
+            raise HTTPException(status_code=400, detail=f"Invalid subcategory: {item.subcategory}")
         # Skip required field checks — auto-save sends partial data
         _validate_fields(sub_def, fields, check_required=False)
         field_types = {f["key"]: f["type"] for f in _get_all_fields(sub_def)}
-
-        # Get org encryption key for encrypting sensitive fields
-        from app.orgs.models import Organization
-        org = db.query(Organization).filter(Organization.id == item.org_id).first()
-        if not org:
-            raise HTTPException(status_code=404, detail="Organization not found")
-        org_key = get_org_encryption_key(org)
         encrypted_fields = _get_encrypted_fields(sub_def)
 
         # Delete existing field values and replace
@@ -315,7 +322,7 @@ def update_item(
 
     db.commit()
     db.refresh(item)
-    return _item_to_response(item, db)
+    return _item_to_response(item, org_key)
 
 
 def delete_item(db: DBSession, item_id: str, org_id: str) -> None:
@@ -523,4 +530,5 @@ def renew_item(
 
     db.commit()
     db.refresh(new_item)
-    return _item_to_response(new_item, db)
+    org_key = _get_org_key(db, org_id)
+    return _item_to_response(new_item, org_key)

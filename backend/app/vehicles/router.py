@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.auth.models import User
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, verify_item_ownership
 from app.items.models import Item
 from app.orgs.service import get_active_org_id
 from app.people.models import Person
@@ -53,16 +53,21 @@ def _vehicle_to_out(vehicle: Vehicle) -> VehicleOut:
 
 @router.get("", response_model=list[VehicleOut])
 def list_vehicles(
+    page: int = 1,
+    limit: int = 50,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
     """List all vehicles in the user's org."""
     org_id = get_active_org_id(user, db)
+    offset = (max(page, 1) - 1) * limit
     vehicles = (
         db.query(Vehicle)
         .options(joinedload(Vehicle.owner), joinedload(Vehicle.primary_driver))
         .filter(Vehicle.org_id == org_id)
         .order_by(Vehicle.name.asc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [_vehicle_to_out(v) for v in vehicles]
@@ -284,11 +289,7 @@ def list_item_vehicles(
 ):
     """List vehicles assigned to a specific item."""
     org_id = get_active_org_id(user, db)
-
-    # Verify item belongs to user's org
-    item = db.query(Item).filter(Item.id == item_id, Item.org_id == org_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    verify_item_ownership(db, item_id, org_id)
 
     vehicles = (
         db.query(Vehicle)
@@ -310,11 +311,7 @@ def assign_vehicle(
 ):
     """Assign an existing org vehicle to an item."""
     org_id = get_active_org_id(user, db)
-
-    # Verify item belongs to user's org
-    item = db.query(Item).filter(Item.id == item_id, Item.org_id == org_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    verify_item_ownership(db, item_id, org_id)
 
     # Verify vehicle belongs to user's org
     vehicle = (

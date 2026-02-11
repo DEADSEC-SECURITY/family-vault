@@ -48,6 +48,7 @@ const DEFAULT_RELATIONSHIPS = [
 export default function NewPersonPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -65,10 +66,11 @@ export default function NewPersonPage() {
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      alert("First name and last name are required");
+      setError("First name and last name are required.");
       return;
     }
 
+    setError(null);
     setSaving(true);
     try {
       const person = await api.people.create({
@@ -84,7 +86,7 @@ export default function NewPersonPage() {
       router.push(`/people/${person.id}`);
     } catch (err) {
       console.error("Failed to create person:", err);
-      alert("Failed to create person. Please try again.");
+      setError("Failed to create person. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -97,6 +99,7 @@ export default function NewPersonPage() {
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Back to people"
           onClick={() => router.push("/people")}
         >
           <ArrowLeft className="h-5 w-5" />
@@ -116,6 +119,11 @@ export default function NewPersonPage() {
 
       {/* Form */}
       <div className="flex-1 overflow-auto">
+        {error && (
+          <div role="alert" className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Person Information</CardTitle>

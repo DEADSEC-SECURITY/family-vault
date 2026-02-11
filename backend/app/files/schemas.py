@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -7,4 +9,4 @@ class FileUploadResponse(BaseModel):
     file_size: int
     mime_type: str
     purpose: str | None
-    created_at: str
+    created_at: datetime

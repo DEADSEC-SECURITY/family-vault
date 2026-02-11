@@ -1,3 +1,9 @@
+---
+layout: default
+title: Deployment
+nav_order: 6
+---
+
 # Deployment Guide
 
 This guide covers various deployment options for Family Vault.

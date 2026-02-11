@@ -1,10 +1,64 @@
 import logging
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        response.headers["X-XSS-Protection"] = "0"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains"
+            )
+        return response
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple in-memory per-IP rate limiter using sliding window."""
+
+    def __init__(self, app, requests_per_minute: int = 60):
+        super().__init__(app)
+        self.requests_per_minute = requests_per_minute
+        self.window = 60  # seconds
+        self._hits: dict[str, list[float]] = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        cutoff = now - self.window
+
+        # Prune old timestamps and remove empty entries
+        hits = [t for t in self._hits.get(client_ip, []) if t > cutoff]
+        if hits:
+            self._hits[client_ip] = hits
+        else:
+            self._hits.pop(client_ip, None)
+
+        if len(hits) >= self.requests_per_minute:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests"},
+            )
+
+        hits.append(now)
+        return await call_next(request)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +129,9 @@ async def lifespan(app: FastAPI):
     from app.contacts.models import ItemContact  # noqa: F401
     from app.coverage.models import CoveragePlanLimit, CoverageRow, InNetworkProvider  # noqa: F401
     from app.vehicles.models import Vehicle, ItemVehicle  # noqa: F401
-    from app.people.models import Person  # noqa: F401
+    from app.people.models import Person, ItemPerson  # noqa: F401
+    from app.item_links.models import ItemLink  # noqa: F401
+    from app.saved_contacts.models import SavedContact, ItemSavedContact  # noqa: F401
 
     # Start background scheduler
     scheduler = _start_scheduler()
@@ -96,9 +152,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
 
 # Register routers
 from app.auth.router import router as auth_router  # noqa: E402
@@ -115,6 +173,7 @@ from app.vehicles.router import router as vehicles_router  # noqa: E402
 from app.people.router import router as people_router  # noqa: E402
 from app.dashboard.router import router as dashboard_router  # noqa: E402
 from app.visas.router import router as visas_router  # noqa: E402
+from app.item_links.router import router as item_links_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(orgs_router)
@@ -130,6 +189,10 @@ app.include_router(vehicles_router)
 app.include_router(people_router)
 app.include_router(dashboard_router)
 app.include_router(visas_router)
+app.include_router(item_links_router)
+
+from app.saved_contacts.router import router as saved_contacts_router  # noqa: E402
+app.include_router(saved_contacts_router)
 
 
 @app.get("/api/health")

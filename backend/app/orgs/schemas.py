@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -24,15 +26,15 @@ class OrgMemberResponse(BaseModel):
     email: str
     full_name: str
     role: str
-    created_at: str
+    created_at: datetime
 
 
 class OrgResponse(BaseModel):
     id: str
     name: str
     created_by: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
     members: list[OrgMemberResponse] | None = None
 
     model_config = {"from_attributes": True}

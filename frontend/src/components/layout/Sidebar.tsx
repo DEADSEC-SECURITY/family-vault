@@ -10,7 +10,10 @@ import {
   Bell,
   Car,
   Users,
+  BookUser,
   LogOut,
+  FileText,
+  FileCheck,
 } from "lucide-react";
 import { removeToken, getStoredUser } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -18,14 +21,23 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
-const navItemsTop = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-];
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
 
-const navItemsBottom = [
+const personalItems: NavItem[] = [
   { href: "/ids", label: "Family IDs", icon: IdCard },
   { href: "/insurance", label: "Insurance", icon: ShieldCheck },
-  { href: "/business", label: "Business", icon: Briefcase },
+  { href: "/personal-taxes", label: "Taxes", icon: FileText },
+];
+
+const businessItems: NavItem[] = [
+  { href: "/business", label: "Businesses", icon: Briefcase },
+  { href: "/licenses", label: "Licenses", icon: FileCheck },
+  { href: "/business-insurance", label: "Insurance", icon: ShieldCheck },
+  { href: "/taxes", label: "Taxes", icon: FileText },
 ];
 
 interface SidebarProps {
@@ -49,6 +61,29 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
     router.push("/login");
   }
 
+  function NavLink({ href, label, icon: Icon, pathname: pn, collapsed: col, exact }: {
+    href: string; label: string; icon: React.ComponentType<{ className?: string }>;
+    pathname: string; collapsed: boolean; exact?: boolean;
+  }) {
+    const isActive = exact ? pn === href : (pn === href || pn.startsWith(href + "/"));
+    return (
+      <Link
+        href={href}
+        title={col ? label : undefined}
+        className={cn(
+          "flex items-center rounded-lg text-[13px] font-medium transition-colors",
+          col ? "justify-center p-2" : "gap-3 px-3 py-1.5",
+          isActive
+            ? "bg-blue-50 text-blue-700"
+            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+        )}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!col && label}
+      </Link>
+    );
+  }
+
   return (
     <aside
       className={cn(
@@ -57,7 +92,7 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
       )}
     >
       {/* Logo */}
-      <div className={cn("flex items-center", collapsed ? "justify-center p-4" : "p-6")}>
+      <div className={cn("flex items-center", collapsed ? "justify-center p-3" : "px-6 py-4")}>
         <Link href="/dashboard" className="text-xl font-bold text-gray-900">
           {collapsed ? "F" : "FamilyVault"}
         </Link>
@@ -65,99 +100,51 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
 
       {/* Nav items */}
       <nav className={cn("flex-1 space-y-1", collapsed ? "px-2" : "px-3")}>
-        {navItemsTop.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                "flex items-center rounded-lg text-sm font-medium transition-colors",
-                collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-                isActive
-                  ? "bg-blue-50 text-blue-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-              )}
-            >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && item.label}
-            </Link>
-          );
-        })}
+        {/* Dashboard */}
+        <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} pathname={pathname} collapsed={collapsed} exact />
 
-        {/* Reminders — right under Dashboard */}
+        {/* Reminders */}
         <button
           onClick={onToggleReminders}
           title={collapsed ? "Reminders" : undefined}
           className={cn(
-            "flex items-center rounded-lg text-sm font-medium transition-colors w-full",
-            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
+            "flex items-center rounded-lg text-[13px] font-medium transition-colors w-full",
+            collapsed ? "justify-center p-2" : "gap-3 px-3 py-1.5",
             remindersOpen
               ? "bg-blue-50 text-blue-700"
               : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
           )}
         >
-          <Bell className="h-5 w-5 shrink-0" />
+          <Bell className="h-4 w-4 shrink-0" />
           {!collapsed && "Reminders"}
         </button>
 
         <Separator className="my-2" />
 
-        {/* Vehicles */}
-        <Link
-          href="/vehicles"
-          title={collapsed ? "Vehicles" : undefined}
-          className={cn(
-            "flex items-center rounded-lg text-sm font-medium transition-colors",
-            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-            pathname.startsWith("/vehicles")
-              ? "bg-blue-50 text-blue-700"
-              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-          )}
-        >
-          <Car className="h-5 w-5 shrink-0" />
-          {!collapsed && "Vehicles"}
-        </Link>
+        {/* Shared items */}
+        <NavLink href="/vehicles" label="Vehicles" icon={Car} pathname={pathname} collapsed={collapsed} />
+        <NavLink href="/people" label="People" icon={Users} pathname={pathname} collapsed={collapsed} />
+        <NavLink href="/contacts" label="Contacts" icon={BookUser} pathname={pathname} collapsed={collapsed} />
 
-        {/* People */}
-        <Link
-          href="/people"
-          title={collapsed ? "People" : undefined}
-          className={cn(
-            "flex items-center rounded-lg text-sm font-medium transition-colors",
-            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-            pathname.startsWith("/people")
-              ? "bg-blue-50 text-blue-700"
-              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-          )}
-        >
-          <Users className="h-5 w-5 shrink-0" />
-          {!collapsed && "People"}
-        </Link>
+        {/* Personal section */}
+        {collapsed ? <Separator className="my-2" /> : (
+          <div className="px-3 pt-3 pb-0.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Personal</span>
+          </div>
+        )}
+        {personalItems.map((item) => (
+          <NavLink key={item.href} href={item.href} label={item.label} icon={item.icon} pathname={pathname} collapsed={collapsed} />
+        ))}
 
-        <Separator className="my-2" />
-
-        {navItemsBottom.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                "flex items-center rounded-lg text-sm font-medium transition-colors",
-                collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-                isActive
-                  ? "bg-blue-50 text-blue-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-              )}
-            >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && item.label}
-            </Link>
-          );
-        })}
+        {/* Business section */}
+        {collapsed ? <Separator className="my-2" /> : (
+          <div className="px-3 pt-3 pb-0.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Business</span>
+          </div>
+        )}
+        {businessItems.map((item) => (
+          <NavLink key={item.href} href={item.href} label={item.label} icon={item.icon} pathname={pathname} collapsed={collapsed} />
+        ))}
       </nav>
 
       <Separator />

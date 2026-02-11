@@ -20,12 +20,16 @@
 10. [Coverage System (Insurance)](#10-coverage-system-insurance)
 11. [Contacts System](#11-contacts-system)
 12. [Reminders System](#12-reminders-system)
-13. [Image Editor & Auto-Detect](#13-image-editor--auto-detect)
-14. [Provider Data](#14-provider-data)
-15. [Environment Variables](#15-environment-variables)
-16. [Docker & Deployment](#16-docker--deployment)
-17. [Migrations](#17-migrations)
-18. [Troubleshooting & Lessons Learned](#18-troubleshooting--lessons-learned)
+13. [Vehicles System](#13-vehicles-system)
+14. [People System](#14-people-system)
+15. [Visa System](#15-visa-system)
+16. [Image Editor & Auto-Detect](#16-image-editor--auto-detect)
+17. [Provider Data](#17-provider-data)
+18. [Shared Utilities & Reusable Components](#18-shared-utilities--reusable-components)
+19. [Environment Variables](#19-environment-variables)
+20. [Docker & Deployment](#20-docker--deployment)
+21. [Migrations](#21-migrations)
+22. [Troubleshooting & Lessons Learned](#22-troubleshooting--lessons-learned)
 
 ---
 
@@ -131,7 +135,7 @@ Trustworthy Open Source/
 │   │
 │   ├── alembic/
 │   │   ├── env.py              # Migration environment
-│   │   └── versions/           # 7 migration files (001–007)
+│   │   └── versions/           # 13 migration files (001–013)
 │   │
 │   └── app/
 │       ├── main.py             # FastAPI app, lifespan, router registration
@@ -190,6 +194,26 @@ Trustworthy Open Source/
 │       │   ├── data.py         #   INSURANCE_PROVIDERS list, PROVIDER_DETAILS dict
 │       │   └── router.py       #   /api/providers/* endpoints
 │       │
+│       ├── vehicles/           # Org-wide vehicle database
+│       │   ├── models.py       #   Vehicle, ItemVehicle tables
+│       │   ├── schemas.py      #   VehicleCreate/Out, AssignVehicle
+│       │   └── router.py       #   /api/vehicles/* endpoints
+│       │
+│       ├── people/             # Org-wide people database
+│       │   ├── models.py       #   Person table
+│       │   ├── schemas.py      #   PersonCreate/Out
+│       │   └── router.py       #   /api/people/* endpoints
+│       │
+│       ├── visas/              # Visa types & country contacts
+│       │   ├── data.py         #   VISA_TYPES list, COUNTRY_CONTACTS dict
+│       │   └── router.py       #   /api/visas/* endpoints
+│       │
+│       ├── dashboard/          # Dashboard statistics
+│       │   └── router.py       #   /api/dashboard endpoint
+│       │
+│       ├── business_reminders/ # Business-specific reminders
+│       │   └── router.py       #   /api/business-reminders endpoint
+│       │
 │       ├── search/             # Full-text search across items
 │       │   ├── service.py      #   ILIKE search on name + field values
 │       │   └── router.py       #   /api/search endpoint
@@ -241,10 +265,17 @@ Trustworthy Open Source/
 │       │   │   ├── CategoryPage.tsx    # Category listing with subcategory sections
 │       │   │   ├── SubcategorySection.tsx # Subcategory accordion with item cards
 │       │   │   ├── ItemCard.tsx        # Item card in list view
+│       │   │   ├── SubcategoryIcon.tsx # Config-driven icon for all subcategories
+│       │   │   ├── ReminderCard.tsx    # Reusable reminder card (3 variants)
+│       │   │   ├── ReminderEditDialog.tsx # Edit dialog for custom reminders
 │       │   │   ├── ItemDetailView.tsx  # Compact item detail (used in lists)
 │       │   │   ├── ItemFormDialog.tsx  # Create/edit item dialog
 │       │   │   ├── FieldRenderer.tsx   # Dynamic field rendering by type
 │       │   │   ├── ProviderCombobox.tsx # Insurance provider autocomplete
+│       │   │   ├── VisaFieldCombobox.tsx # Visa type autocomplete
+│       │   │   ├── PersonSelector.tsx  # Person picker from org people
+│       │   │   ├── PassportSelector.tsx # Passport picker for visa linking
+│       │   │   ├── VehiclesSection.tsx # Vehicle assignment for auto insurance
 │       │   │   ├── FileUploader.tsx    # Drag-and-drop file upload
 │       │   │   ├── FileList.tsx        # File attachment list
 │       │   │   ├── ImageEditor.tsx     # Crop/rotate/auto-detect image editor
@@ -255,6 +286,7 @@ Trustworthy Open Source/
 │       ├── lib/
 │       │   ├── api.ts             # ★ API client + all TypeScript interfaces
 │       │   ├── auth.ts            # Token/user localStorage helpers
+│       │   ├── format.ts          # Shared formatting utilities (humanize, titleCase, etc.)
 │       │   ├── utils.ts           # cn() Tailwind utility
 │       │   └── image-utils.ts     # Image crop/rotate/auto-detect algorithms
 │       │
@@ -328,6 +360,8 @@ Organizations provide multi-tenant isolation. Each org has:
 - `create_organization()`: Generates random org key, encrypts it with master key, creates org + owner membership
 - `get_org_encryption_key()`: Decrypts and returns the org's 256-bit encryption key
 - `get_user_orgs()`: Returns all orgs a user belongs to
+- `get_active_org(user, db)`: Shared helper returning the user's first org (full object). Used by routers that need the encryption key.
+- `get_active_org_id(user, db)`: Shared helper returning just the org ID string. Used by all routers for org-scoped queries. Eliminates per-router `_get_active_org_id()` duplication.
 
 ### 4.7 Module: `categories/`
 
@@ -425,13 +459,57 @@ Insurance coverage tracking with different layouts per subcategory:
 
 When a user selects a provider in the UI, the frontend fetches `PROVIDER_DETAILS` and can auto-populate linked contacts.
 
-### 4.14 Module: `search/`
+### 4.14 Module: `vehicles/`
+
+**Tables**: `vehicles`, `item_vehicles`
+
+Org-wide vehicle database. Vehicles are managed at the org level and can be assigned to auto insurance items via a many-to-many junction table.
+
+| Endpoint                                    | Method | Description                        |
+| ------------------------------------------- | ------ | ---------------------------------- |
+| `/api/vehicles`                             | GET    | List all org vehicles              |
+| `/api/vehicles`                             | POST   | Create a new vehicle               |
+| `/api/vehicles/{id}`                        | PATCH  | Update vehicle details             |
+| `/api/vehicles/{id}`                        | DELETE | Delete vehicle (cascades)          |
+| `/api/vehicles/item/{item_id}`              | GET    | List vehicles assigned to an item  |
+| `/api/vehicles/item/{item_id}`              | POST   | Assign a vehicle to an item        |
+| `/api/vehicles/item/{item_id}/{vehicle_id}` | DELETE | Unassign a vehicle from an item    |
+
+### 4.15 Module: `people/`
+
+**Tables**: `people`
+
+Org-wide people database. People can be linked to items via `PersonSelector` on the frontend (e.g., insured person on a policy, ID holder).
+
+| Endpoint             | Method | Description           |
+| -------------------- | ------ | --------------------- |
+| `/api/people`        | GET    | List all org people   |
+| `/api/people`        | POST   | Create a person       |
+| `/api/people/{id}`   | PATCH  | Update person details |
+| `/api/people/{id}`   | DELETE | Delete person         |
+
+### 4.16 Module: `visas/`
+
+**No database tables** — visa type data and country embassy contacts are hardcoded in `data.py`.
+
+- `VISA_TYPES`: List of common visa categories (B-1, F-1, H-1B, etc.)
+- `COUNTRY_CONTACTS`: Dict of country embassy/consulate contact info
+
+Used by the `VisaFieldCombobox` on the frontend for visa subcategory items.
+
+### 4.17 Module: `dashboard/`
+
+**No database tables** — aggregates data from items.
+
+Returns org-level statistics: total items per category, items with upcoming expirations, and recent activity.
+
+### 4.18 Module: `search/`
 
 **No database tables** — queries `items` and `item_field_values`.
 
 Uses PostgreSQL `ILIKE` to search item names and field values. Returns up to 50 matching items.
 
-### 4.15 Module: `email/`
+### 4.19 Module: `email/`
 
 **No database tables.**
 
@@ -560,7 +638,46 @@ Also includes:
 - **Plan limits**: Editable deductible/OOP max values
 - **In-network providers**: CRUD for doctors/facilities with name, specialty, phone, address
 
-### 5.7 Other Key Components
+### 5.7 SubcategoryIcon Component — `components/items/SubcategoryIcon.tsx`
+
+Config-driven icon component that replaces per-category icon switch statements. Maps subcategory keys to icon + color configurations.
+
+```typescript
+// Usage
+<SubcategoryIcon subcategory="auto_insurance" category="insurance" size="md" />
+```
+
+- **`SUBCATEGORY_ICONS`**: Record mapping subcategory keys to `{ icon, bgColor, iconColor }`
+- **`CATEGORY_DEFAULTS`**: Fallback icons per category when subcategory isn't found
+- **`size` prop**: `"sm"` (32px) or `"md"` (48px)
+- Used by `ItemCard` and `SubcategorySection` for consistent iconography
+
+### 5.8 ReminderCard Component — `components/items/ReminderCard.tsx`
+
+Reusable reminder display component with three variants for different contexts:
+
+| Variant   | Used In              | Layout                                          |
+| --------- | -------------------- | ----------------------------------------------- |
+| `default` | Reminders page       | Full card with urgency colors, overdue badges   |
+| `compact` | RemindersPanel       | Compact row with item name, days until, link    |
+| `sidebar` | ItemPage RightSidebar| Border card with edit/delete buttons             |
+
+Props: `reminder`, `variant`, `onEdit`, `onDelete`, `onClose`, `showItemLink`
+
+### 5.9 Shared Format Utilities — `lib/format.ts`
+
+Centralized formatting functions used across multiple components:
+
+| Function        | Purpose                                     | Example                                |
+| --------------- | ------------------------------------------- | -------------------------------------- |
+| `humanize()`    | Replace underscores with spaces             | `"auto_insurance"` → `"auto insurance"` |
+| `titleCase()`   | Humanize + capitalize words                 | `"auto_insurance"` → `"Auto Insurance"` |
+| `formatDate()`  | ISO date to locale display                  | `"2025-01-15"` → `"Jan 15, 2025"`     |
+| `getFieldValue()` | Get field from item's EAV fields         | `getFieldValue(item, "policy_number")` |
+| `repeatLabel()` | Repeat frequency to human label             | `"quarterly"` → `"Every 3 months"`    |
+| `REPEAT_OPTIONS`| Const array of repeat frequency options     | Used by reminder forms                 |
+
+### 5.10 Other Key Components
 
 | Component              | File                    | Description                                    |
 | ---------------------- | ----------------------- | ---------------------------------------------- |
@@ -569,6 +686,11 @@ Also includes:
 | `ItemFormDialog`       | `ItemFormDialog.tsx`    | Create/edit dialog with dynamic fields          |
 | `FieldRenderer`        | `FieldRenderer.tsx`     | Renders field inputs by type (text/date/select) |
 | `ProviderCombobox`     | `ProviderCombobox.tsx`  | Autocomplete dropdown for insurance providers   |
+| `VisaFieldCombobox`    | `VisaFieldCombobox.tsx` | Autocomplete for visa types                     |
+| `PersonSelector`       | `PersonSelector.tsx`    | Person picker from org people database          |
+| `PassportSelector`     | `PassportSelector.tsx`  | Passport picker for visa linking                |
+| `VehiclesSection`      | `VehiclesSection.tsx`   | Vehicle assignment for auto insurance items     |
+| `ReminderEditDialog`   | `ReminderEditDialog.tsx`| Edit dialog for existing custom reminders       |
 | `FileUploader`         | `FileUploader.tsx`      | Drag-and-drop file upload zone                  |
 | `FileList`             | `FileList.tsx`          | List of file attachments with download/delete   |
 | `Sidebar`              | `Sidebar.tsx`           | Left navigation with category links             |
@@ -767,6 +889,43 @@ item_field_values  file_attachments  custom_reminders  item_contacts
 | notes         | TEXT         | Additional notes               |
 | created_at    | TIMESTAMPTZ  |                                |
 
+#### `vehicles`
+| Column        | Type         | Notes                                |
+| ------------- | ------------ | ------------------------------------ |
+| id            | VARCHAR(36)  | PK, UUID                             |
+| org_id        | VARCHAR(36)  | FK → organizations.id (CASCADE)      |
+| name          | VARCHAR(100) | e.g. "2020 Toyota Camry"            |
+| year          | INTEGER      | Vehicle year (nullable)              |
+| make          | VARCHAR(100) | Vehicle make (nullable)              |
+| model         | VARCHAR(100) | Vehicle model (nullable)             |
+| license_plate | VARCHAR(20)  | Nullable                             |
+| vin           | VARCHAR(17)  | Nullable                             |
+| created_at    | TIMESTAMPTZ  |                                      |
+| updated_at    | TIMESTAMPTZ  |                                      |
+
+#### `item_vehicles`
+| Column     | Type         | Notes                                     |
+| ---------- | ------------ | ----------------------------------------- |
+| id         | VARCHAR(36)  | PK, UUID                                  |
+| item_id    | VARCHAR(36)  | FK → items.id (CASCADE)                   |
+| vehicle_id | VARCHAR(36)  | FK → vehicles.id (CASCADE)                |
+| org_id     | VARCHAR(36)  | FK → organizations.id (CASCADE)           |
+| created_at | TIMESTAMPTZ  |                                           |
+| **UQ**     |              | `(item_id, vehicle_id)` unique together   |
+
+#### `people`
+| Column       | Type         | Notes                               |
+| ------------ | ------------ | ----------------------------------- |
+| id           | VARCHAR(36)  | PK, UUID                            |
+| org_id       | VARCHAR(36)  | FK → organizations.id (CASCADE)     |
+| first_name   | VARCHAR(100) | NOT NULL                            |
+| last_name    | VARCHAR(100) | NOT NULL                            |
+| email        | VARCHAR(255) | Nullable                            |
+| phone        | VARCHAR(50)  | Nullable                            |
+| relationship | VARCHAR(100) | e.g. "Spouse", "Child" (nullable)   |
+| created_at   | TIMESTAMPTZ  |                                     |
+| updated_at   | TIMESTAMPTZ  |                                     |
+
 ---
 
 ## 7. API Reference
@@ -841,6 +1000,34 @@ All endpoints (except auth) require `Authorization: Bearer <token>` header.
 | POST   | `/coverage/providers`     | `InNetworkProviderCreate`  | `InNetworkProvider`     |
 | DELETE | `/coverage/providers/{id}`| —                          | 204                     |
 
+### Vehicles
+
+| Method | Path                                     | Body/Query              | Response         |
+| ------ | ---------------------------------------- | ----------------------- | ---------------- |
+| GET    | `/vehicles`                              | —                       | `Vehicle[]`      |
+| POST   | `/vehicles`                              | `VehicleCreate`         | `Vehicle`        |
+| PATCH  | `/vehicles/{id}`                         | `VehicleUpdate`         | `Vehicle`        |
+| DELETE | `/vehicles/{id}`                         | —                       | 204              |
+| GET    | `/vehicles/item/{item_id}`               | —                       | `Vehicle[]`      |
+| POST   | `/vehicles/item/{item_id}`               | `{vehicle_id}`          | `{ok: true}`     |
+| DELETE | `/vehicles/item/{item_id}/{vehicle_id}`  | —                       | 204              |
+
+### People
+
+| Method | Path            | Body/Query      | Response    |
+| ------ | --------------- | --------------- | ----------- |
+| GET    | `/people`       | —               | `Person[]`  |
+| POST   | `/people`       | `PersonCreate`  | `Person`    |
+| PATCH  | `/people/{id}`  | `PersonUpdate`  | `Person`    |
+| DELETE | `/people/{id}`  | —               | 204         |
+
+### Visas
+
+| Method | Path                          | Query | Response              |
+| ------ | ----------------------------- | ----- | --------------------- |
+| GET    | `/visas/types`                | `?q`  | `string[]`            |
+| GET    | `/visas/contacts/{country}`   | —     | `CountryContacts`     |
+
 ### Providers
 
 | Method | Path                               | Query | Response                   |
@@ -853,6 +1040,12 @@ All endpoints (except auth) require `Authorization: Bearer <token>` header.
 | Method | Path       | Query | Response           |
 | ------ | ---------- | ----- | ------------------ |
 | GET    | `/search`  | `?q`  | `ItemListResponse` |
+
+### Dashboard
+
+| Method | Path          | Response                                |
+| ------ | ------------- | --------------------------------------- |
+| GET    | `/dashboard`  | `{categories, recentItems, reminders}`  |
 
 ### Health Check
 
@@ -946,12 +1139,41 @@ CATEGORIES = {
 
 Fields with keys in `REMINDER_FIELD_KEYS = {"expiration_date", "end_date"}` automatically generate reminders when the date is within 90 days.
 
+### Field Groups
+
+Some subcategories use `field_groups` to organize fields into visually separate cards:
+
+```python
+"llc": {
+    "field_groups": [
+        {
+            "label": "Business Details",
+            "fields": [
+                {"key": "business_name", ...},
+                {"key": "ein", ...},
+            ]
+        },
+        {
+            "label": "Business Address",
+            "fields": [
+                {"key": "business_address_line1", ...},
+                {"key": "business_city", ...},
+            ]
+        }
+    ],
+    "file_slots": [...]
+}
+```
+
+When `field_groups` is present, the frontend renders each group in its own white card. When absent, all fields appear in a single card (the default flat `fields` array).
+
 ### Adding a New Category
 
 1. Add the category + subcategories to `CATEGORIES` in `definitions.py`
-2. If it has insurance-like coverage, add to `COVERAGE_DEFINITIONS`
-3. Create frontend route pages under `frontend/src/app/(app)/{slug}/`
-4. Add the sidebar link in `Sidebar.tsx`
+2. Add the subcategory icon in `SubcategoryIcon.tsx` (`SUBCATEGORY_ICONS` map)
+3. If it has insurance-like coverage, add to `COVERAGE_DEFINITIONS`
+4. Create frontend route pages under `frontend/src/app/(app)/{slug}/`
+5. Add the sidebar link in `Sidebar.tsx`
 
 ---
 
@@ -1042,7 +1264,61 @@ If SMTP is configured, the backend sends email notifications for due reminders:
 
 ---
 
-## 13. Image Editor & Auto-Detect
+## 13. Vehicles System
+
+Org-wide vehicle database for tracking cars across auto insurance policies.
+
+### Architecture
+
+- **Vehicles** are org-scoped (shared across all items)
+- **Item-Vehicle links** are many-to-many via `item_vehicles` junction table
+- The same vehicle can be assigned to multiple auto insurance items
+- Deleting a vehicle cascades to all `item_vehicles` links
+
+### Frontend Integration
+
+`VehiclesSection` renders in the Overview tab only when `subcategory === "auto_insurance"`. It provides:
+- List of assigned vehicles with name, plate, and VIN
+- "+ Add" button with two options: create new or assign existing
+- Inline edit (pencil icon) for vehicle details
+- Remove (X) unassigns from item without deleting the org vehicle
+
+---
+
+## 14. People System
+
+Org-wide people database for linking individuals to items.
+
+### Architecture
+
+- **People** are org-scoped (e.g., family members)
+- People can be referenced from items via `PersonSelector` (e.g., the insured person, ID holder)
+- Fields: `first_name`, `last_name`, `email`, `phone`, `relationship`
+
+### Frontend Integration
+
+`PersonSelector` is a combobox that lists org people and allows creating new ones inline. Used in field definitions where `type: "person"` would be appropriate (linked from item fields).
+
+---
+
+## 15. Visa System
+
+Visa management for the Family IDs category.
+
+### Architecture
+
+- `visa` is a subcategory under `ids` with specialized fields: visa_type, country, entry_type, issue_date, expiration_date
+- `PassportSelector` links a visa to an existing passport item
+- `VisaFieldCombobox` provides autocomplete for visa types (B-1, F-1, H-1B, etc.)
+- Country-specific embassy/consulate contacts are served from `backend/app/visas/data.py`
+
+### Country Contacts
+
+When a country is selected, the frontend can fetch embassy contacts via `/api/visas/contacts/{country}`. This auto-populates linked contacts on the item.
+
+---
+
+## 16. Image Editor & Auto-Detect
 
 ### Features
 
@@ -1114,7 +1390,7 @@ Set `NEXT_PUBLIC_DEBUG_DETECT=true` in docker-compose.yml to show a debug panel 
 
 ---
 
-## 14. Provider Data
+## 17. Provider Data
 
 ### Insurance Providers List
 
@@ -1135,7 +1411,47 @@ Aetna, Anthem, Blue Cross Blue Shield, Cigna, Humana, Kaiser Permanente, United 
 
 ---
 
-## 15. Environment Variables
+## 18. Shared Utilities & Reusable Components
+
+### Backend: Shared Org Helpers (`orgs/service.py`)
+
+All routers need the active org ID for scoping queries. Instead of duplicating a `_get_active_org_id()` helper in each router, two shared functions are provided:
+
+```python
+from app.orgs.service import get_active_org, get_active_org_id
+
+# In any router:
+@router.get("/items")
+def list_items(user = Depends(get_current_user), db = Depends(get_db)):
+    org_id = get_active_org_id(user, db)  # Returns str
+    # ... org-scoped query
+```
+
+- **`get_active_org(user, db)`** — Returns the full `Organization` object. Used by `files/router.py` which needs the encryption key.
+- **`get_active_org_id(user, db)`** — Returns just the org ID string. Used by all other routers.
+
+### Frontend: `lib/format.ts`
+
+Centralized formatting utilities extracted from duplicated code across components. See [Section 5.9](#59-shared-format-utilities--libformatts) for the full API.
+
+### Frontend: `SubcategoryIcon` Component
+
+Config-driven icon component replacing 3 duplicated switch-statement functions. See [Section 5.7](#57-subcategoryicon-component--componentsitemssubcategoryicontsx).
+
+### Frontend: `ReminderCard` Component
+
+Reusable reminder display with 3 variants for consistent rendering. See [Section 5.8](#58-remindercard-component--componentsitemsremindercardtsx).
+
+### Design Principles
+
+1. **Extract shared helpers when >2 modules duplicate the same logic** (e.g., `get_active_org_id`)
+2. **Use config-driven components over switch statements** (e.g., `SubcategoryIcon` over `ProviderLogo`/`IDIcon`/`BusinessIcon`)
+3. **Create variant-based components for reuse across contexts** (e.g., `ReminderCard` with `default`/`compact`/`sidebar` variants)
+4. **Centralize formatting in `lib/format.ts`** — avoid per-component `formatDate()`, `humanize()`, etc.
+
+---
+
+## 19. Environment Variables
 
 Copy `.env.example` to `.env` and customize:
 
@@ -1163,7 +1479,7 @@ Copy `.env.example` to `.env` and customize:
 
 ---
 
-## 16. Docker & Deployment
+## 20. Docker & Deployment
 
 ### Services
 
@@ -1237,19 +1553,25 @@ docker compose down -v && docker compose up -d --build
 
 ---
 
-## 17. Migrations
+## 21. Migrations
 
 Migrations are managed by Alembic. They run automatically on backend startup via `alembic upgrade head`.
 
-| Migration | File                              | Description                                |
-| --------- | --------------------------------- | ------------------------------------------ |
-| 001       | `001_initial_schema.py`           | users, sessions, organizations, org_memberships, items, item_field_values, file_attachments |
-| 002       | `002_custom_reminders.py`         | custom_reminders table                     |
-| 003       | `003_add_repeat_to_reminders.py`  | Add `repeat` column to custom_reminders    |
-| 004       | `004_item_contacts.py`            | item_contacts table                        |
-| 005       | `005_coverage_tables.py`          | coverage_rows, coverage_plan_limits, in_network_providers |
-| 006       | `006_contacts_sort_order.py`      | Add `sort_order` column to item_contacts   |
-| 007       | `007_structured_address_fields.py`| Add address_line1..address_zip to item_contacts |
+| Migration | File                                 | Description                                |
+| --------- | ------------------------------------ | ------------------------------------------ |
+| 001       | `001_initial_schema.py`              | users, sessions, organizations, org_memberships, items, item_field_values, file_attachments |
+| 002       | `002_custom_reminders.py`            | custom_reminders table                     |
+| 003       | `003_add_repeat_to_reminders.py`     | Add `repeat` column to custom_reminders    |
+| 004       | `004_item_contacts.py`               | item_contacts table                        |
+| 005       | `005_coverage_tables.py`             | coverage_rows, coverage_plan_limits, in_network_providers |
+| 006       | `006_contacts_sort_order.py`         | Add `sort_order` column to item_contacts   |
+| 007       | `007_structured_address_fields.py`   | Add address_line1..address_zip to item_contacts |
+| 008       | `008_vehicles.py`                    | vehicles, item_vehicles tables             |
+| 009       | `009_rename_home_insurance.py`       | Rename home insurance subcategory keys     |
+| 010       | `010_people.py`                      | people table                               |
+| 011       | `011_vehicle_fields.py`              | Add year, make, model to vehicles          |
+| 012       | `012_encrypt_sensitive_fields.py`    | Encrypt sensitive field values at rest     |
+| 013       | `013_reminder_enhancements.py`       | Reminder system enhancements               |
 
 ### Creating a New Migration
 
@@ -1269,7 +1591,7 @@ docker compose exec backend alembic downgrade -1
 
 ---
 
-## 18. Troubleshooting & Lessons Learned
+## 22. Troubleshooting & Lessons Learned
 
 ### Common Issues
 

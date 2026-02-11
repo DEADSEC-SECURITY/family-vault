@@ -69,6 +69,7 @@ export default function PersonDetailPage({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -109,7 +110,6 @@ export default function PersonDetailPage({
         setCanLogin(data.can_login);
       } catch (err) {
         console.error("Failed to fetch person:", err);
-        alert("Failed to load person. Redirecting...");
         router.push("/people");
       } finally {
         if (mounted) {
@@ -127,10 +127,11 @@ export default function PersonDetailPage({
 
   const handleSave = async () => {
     if (!personId || !firstName.trim() || !lastName.trim()) {
-      alert("First name and last name are required");
+      setError("First name and last name are required.");
       return;
     }
 
+    setError(null);
     setSaving(true);
     try {
       const updated = await api.people.update(personId, {
@@ -147,7 +148,7 @@ export default function PersonDetailPage({
       setEditing(false);
     } catch (err) {
       console.error("Failed to update person:", err);
-      alert("Failed to update person. Please try again.");
+      setError("Failed to update person. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -161,7 +162,7 @@ export default function PersonDetailPage({
       router.push("/people");
     } catch (err) {
       console.error("Failed to delete person:", err);
-      alert("Failed to delete person. Please try again.");
+      setError("Failed to delete person. Please try again.");
       setDeleting(false);
     }
   };
@@ -190,6 +191,7 @@ export default function PersonDetailPage({
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Back to people"
             onClick={() => router.push("/people")}
           >
             <ArrowLeft className="h-5 w-5" />
@@ -252,6 +254,11 @@ export default function PersonDetailPage({
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
+        {error && (
+          <div role="alert" className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Photo Card */}
           <Card>

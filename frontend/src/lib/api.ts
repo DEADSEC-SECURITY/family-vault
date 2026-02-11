@@ -72,6 +72,9 @@ async function fetchAPI<T>(
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
+      // Return a never-resolving promise so callers don't receive an error
+      // while the browser is navigating to the login page.
+      return new Promise<T>(() => {});
     }
     const data = await res.json().catch(() => ({}));
     throw new ApiError(res.status, data as Record<string, unknown>);
@@ -115,7 +118,7 @@ export const api = {
     create: (data: ItemCreate) =>
       fetchAPI<Item>("/items", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: ItemUpdate) =>
-      fetchAPI<Item>(`/items/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      fetchAPI<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) =>
       fetchAPI<void>(`/items/${id}`, { method: "DELETE" }),
     renew: (id: string) =>
@@ -287,6 +290,18 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchAPI<void>(`/people/${id}`, { method: "DELETE" }),
+    listForItem: (itemId: string) =>
+      fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`),
+    link: (itemId: string, personId: string, role?: string | null) =>
+      fetchAPI<LinkedPerson>(
+        `/people/item/${encodeURIComponent(itemId)}`,
+        { method: "POST", body: JSON.stringify({ person_id: personId, role: role || null }) },
+      ),
+    unlink: (itemId: string, linkId: string) =>
+      fetchAPI<void>(
+        `/people/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
+        { method: "DELETE" },
+      ),
   },
   dashboard: {
     stats: () => fetchAPI<DashboardStats>("/dashboard/stats"),
@@ -301,6 +316,55 @@ export const api = {
     contacts: (country: string) =>
       fetchAPI<{ country: string; contacts: Array<{ label: string; contact_type: string; value: string }> }>(
         `/visas/contacts/${encodeURIComponent(country)}`,
+      ),
+  },
+  itemLinks: {
+    getParent: (childItemId: string, linkType: string = "business_license") =>
+      fetchAPI<LinkedParent | null>(
+        `/item-links/parent/${encodeURIComponent(childItemId)}?link_type=${encodeURIComponent(linkType)}`,
+      ),
+    getChildren: (parentItemId: string, linkType: string = "business_license") =>
+      fetchAPI<LinkedChild[]>(
+        `/item-links/children/${encodeURIComponent(parentItemId)}?link_type=${encodeURIComponent(linkType)}`,
+      ),
+    link: (childItemId: string, parentItemId: string, linkType: string = "business_license") =>
+      fetchAPI<LinkedParent>(
+        `/item-links/${encodeURIComponent(childItemId)}`,
+        { method: "POST", body: JSON.stringify({ parent_item_id: parentItemId, link_type: linkType }) },
+      ),
+    unlink: (childItemId: string, linkType: string = "business_license") =>
+      fetchAPI<void>(
+        `/item-links/${encodeURIComponent(childItemId)}?link_type=${encodeURIComponent(linkType)}`,
+        { method: "DELETE" },
+      ),
+  },
+
+  savedContacts: {
+    list: () => fetchAPI<SavedContact[]>("/saved-contacts"),
+    get: (id: string) => fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`),
+    create: (data: SavedContactCreate) =>
+      fetchAPI<SavedContact>("/saved-contacts", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: SavedContactUpdate) =>
+      fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      fetchAPI<void>(`/saved-contacts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    listForItem: (itemId: string) =>
+      fetchAPI<LinkedSavedContact[]>(`/saved-contacts/item/${encodeURIComponent(itemId)}`),
+    link: (itemId: string, savedContactId: string) =>
+      fetchAPI<LinkedSavedContact>(
+        `/saved-contacts/item/${encodeURIComponent(itemId)}`,
+        { method: "POST", body: JSON.stringify({ saved_contact_id: savedContactId }) },
+      ),
+    unlink: (itemId: string, linkId: string) =>
+      fetchAPI<void>(
+        `/saved-contacts/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
+        { method: "DELETE" },
       ),
   },
 };
@@ -644,11 +708,100 @@ export interface PersonUpdate {
   can_login?: boolean | null;
 }
 
+export interface LinkedPerson {
+  id: string;
+  person_id: string;
+  item_id: string;
+  role: string | null;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  relationship: string | null;
+  created_at: string;
+}
+
 export interface DashboardStats {
   total_annual_premium: number;
   people_count: number;
   vehicles_count: number;
   policies_count: number;
+}
+
+export interface LinkedParent {
+  id: string;
+  item_id: string;
+  name: string;
+  subcategory: string;
+  is_archived: boolean;
+}
+
+export interface LinkedChild {
+  id: string;
+  item_id: string;
+  name: string;
+  subcategory: string;
+  is_archived: boolean;
+  license_type: string | null;
+  expiration_date: string | null;
+  issuing_authority: string | null;
+  provider: string | null;
+  coverage_type: string | null;
+  premium: string | null;
+  document_type: string | null;
+  tax_year: string | null;
+  created_at: string;
+}
+
+/* Saved Contacts (global contacts directory) */
+export interface SavedContact {
+  id: string;
+  org_id: string;
+  name: string;
+  company: string | null;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedContactCreate {
+  name: string;
+  company?: string | null;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  notes?: string | null;
+}
+
+export interface SavedContactUpdate {
+  name?: string | null;
+  company?: string | null;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  notes?: string | null;
+}
+
+export interface LinkedSavedContact {
+  id: string;
+  saved_contact_id: string;
+  item_id: string;
+  name: string;
+  company: string | null;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  created_at: string;
 }
 
 export { ApiError };

@@ -1,3 +1,9 @@
+---
+layout: default
+title: Architecture
+nav_order: 2
+---
+
 # Architecture Documentation
 
 This document explains how Family Vault works under the hood.
@@ -162,7 +168,18 @@ app.include_router(files_router)
 # ...
 ```
 
-#### 3. Dependency Injection
+#### 3. Shared Org Helpers
+
+All routers need the active org for scoping queries. Instead of per-router `_get_active_org_id()` functions, shared helpers in `orgs/service.py` are used:
+
+```python
+from app.orgs.service import get_active_org_id, get_active_org
+
+# get_active_org_id(user, db) → str (just the ID)
+# get_active_org(user, db) → Organization (full object, for encryption key)
+```
+
+#### 4. Dependency Injection
 
 FastAPI's dependency system provides reusable components:
 
@@ -236,6 +253,9 @@ frontend/
     │       ├── ItemPage.tsx          # Main item editor
     │       ├── ItemCard.tsx          # Card display
     │       ├── CategoryPage.tsx      # Category list page
+    │       ├── SubcategoryIcon.tsx   # Config-driven subcategory icons
+    │       ├── ReminderCard.tsx      # Reusable reminder card (3 variants)
+    │       ├── VehiclesSection.tsx   # Vehicle assignment (auto insurance)
     │       ├── FileUploader.tsx      # File upload
     │       ├── ImageEditor.tsx       # Crop/rotate images
     │       ├── CoverageTab.tsx       # Insurance coverage
@@ -246,7 +266,8 @@ frontend/
     └── lib/
         ├── api.ts                    # API client + types
         ├── auth.ts                   # Auth helpers
-        ├── utils.ts                  # General utilities
+        ├── format.ts                 # Shared formatting utilities
+        ├── utils.ts                  # General utilities (cn)
         └── image-utils.ts            # Image processing
 ```
 
@@ -305,7 +326,25 @@ export const api = {
 const items = await api.items.list({ category: "ids" });
 ```
 
-#### 4. Auto-Save with Debouncing
+#### 4. Shared Formatting (`lib/format.ts`)
+
+Centralized utility functions used by multiple components:
+
+- `humanize()` — Replace underscores with spaces
+- `titleCase()` — Humanize + capitalize words
+- `formatDate()` — ISO date to locale display
+- `getFieldValue()` — Get field from item's EAV fields
+- `repeatLabel()` — Repeat frequency to human label
+- `REPEAT_OPTIONS` — Const array of repeat options
+
+#### 5. Reusable Components
+
+Config-driven and variant-based components avoid duplication:
+
+- **`SubcategoryIcon`** — Maps subcategory keys to icon + color via `SUBCATEGORY_ICONS` config (replaces 3 switch-statement icon functions)
+- **`ReminderCard`** — 3 variants (`default`, `compact`, `sidebar`) for different contexts
+
+#### 6. Auto-Save with Debouncing
 
 ItemPage uses a debounced auto-save pattern:
 

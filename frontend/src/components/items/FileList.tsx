@@ -5,7 +5,6 @@ import { Download, File, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { FileAttachmentType } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 
 interface FileListProps {
   files: FileAttachmentType[];
@@ -34,15 +33,8 @@ export function FileList({ files, onDeleted }: FileListProps) {
   }
 
   async function handleDownload(fileId: string, fileName: string) {
-    const token = getToken();
-    const url = api.files.getUrl(fileId);
     try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = await api.files.getBlobUrl(fileId);
       const a = document.createElement("a");
       a.href = blobUrl;
       a.download = fileName;
@@ -81,6 +73,7 @@ export function FileList({ files, onDeleted }: FileListProps) {
             <Button
               variant="ghost"
               size="sm"
+              aria-label={`Download ${file.file_name}`}
               onClick={() => handleDownload(file.id, file.file_name)}
             >
               <Download className="h-4 w-4" />
@@ -89,6 +82,7 @@ export function FileList({ files, onDeleted }: FileListProps) {
               variant="ghost"
               size="sm"
               className="text-red-500 hover:text-red-700"
+              aria-label={`Delete ${file.file_name}`}
               disabled={deleting === file.id}
               onClick={() => handleDelete(file.id)}
             >

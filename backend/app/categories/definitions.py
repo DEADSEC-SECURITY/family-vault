@@ -141,6 +141,23 @@ CATEGORIES = {
                 "file_slots": ["front_image", "back_image", "document"],
                 "recommended": False,
             },
+            "personal_tax": {
+                "label": "Tax Documents",
+                "icon": "file-text",
+                "fields": [
+                    {"key": "document_type", "label": "Document Type", "type": "text", "required": True},
+                    {"key": "tax_year", "label": "Tax Year", "type": "text", "required": True},
+                    {"key": "filing_status", "label": "Filing Status", "type": "select", "required": False, "options": [
+                        {"value": "Single", "label": "Single"},
+                        {"value": "Married Filing Jointly", "label": "Married Filing Jointly"},
+                        {"value": "Married Filing Separately", "label": "Married Filing Separately"},
+                        {"value": "Head of Household", "label": "Head of Household"},
+                        {"value": "Qualifying Surviving Spouse", "label": "Qualifying Surviving Spouse"},
+                    ]},
+                ],
+                "file_slots": ["tax_document"],
+                "recommended": True,
+            },
         },
     },
     "insurance": {
@@ -468,13 +485,160 @@ CATEGORIES = {
                 "file_slots": ["license_document"],
                 "recommended": True,
             },
-            "business_insurance": {
-                "label": "Business Insurance",
+            "general_liability": {
+                "label": "General Liability (GL)",
                 "icon": "shield",
                 "fields": [
                     {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
+                        {"value": "monthly", "label": "Monthly"},
+                        {"value": "quarterly", "label": "Quarterly"},
+                        {"value": "semi_annual", "label": "Semi-Annual"},
+                        {"value": "annual", "label": "Annual"},
+                    ]},
+                    {"key": "per_occurrence_limit", "label": "Per Occurrence Limit", "type": "number", "required": False},
+                    {"key": "aggregate_limit", "label": "General Aggregate Limit", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance"],
+                "recommended": True,
+            },
+            "professional_liability": {
+                "label": "Professional Liability (E&O)",
+                "icon": "briefcase",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
+                        {"value": "monthly", "label": "Monthly"},
+                        {"value": "quarterly", "label": "Quarterly"},
+                        {"value": "semi_annual", "label": "Semi-Annual"},
+                        {"value": "annual", "label": "Annual"},
+                    ]},
+                    {"key": "coverage_basis", "label": "Coverage Basis", "type": "select", "required": False, "options": [
+                        {"value": "claims_made", "label": "Claims-Made"},
+                        {"value": "occurrence", "label": "Occurrence"},
+                    ]},
+                    {"key": "retroactive_date", "label": "Retroactive Date", "type": "date", "required": False},
+                    {"key": "per_claim_limit", "label": "Per Claim Limit", "type": "number", "required": False},
+                    {"key": "aggregate_limit", "label": "Aggregate Limit", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance"],
+                "recommended": True,
+            },
+            "workers_compensation": {
+                "label": "Workers' Compensation",
+                "icon": "hard-hat",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "state", "label": "State", "type": "select", "required": False, "options": US_STATES},
+                    {"key": "classification_code", "label": "Classification Code", "type": "text", "required": False},
+                    {"key": "experience_mod_rate", "label": "Experience Mod Rate (EMR)", "type": "text", "required": False},
+                    {"key": "number_of_employees", "label": "Number of Employees", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance"],
+                "recommended": True,
+            },
+            "commercial_property": {
+                "label": "Commercial Property",
+                "icon": "building",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
+                        {"value": "monthly", "label": "Monthly"},
+                        {"value": "quarterly", "label": "Quarterly"},
+                        {"value": "semi_annual", "label": "Semi-Annual"},
+                        {"value": "annual", "label": "Annual"},
+                    ]},
+                    {"key": "property_address", "label": "Property Address", "type": "textarea", "required": False},
+                    {"key": "building_value", "label": "Building Value", "type": "number", "required": False},
+                    {"key": "contents_value", "label": "Contents Value", "type": "number", "required": False},
+                    {"key": "valuation_type", "label": "Valuation Type", "type": "select", "required": False, "options": [
+                        {"value": "replacement_cost", "label": "Replacement Cost"},
+                        {"value": "actual_cash_value", "label": "Actual Cash Value"},
+                        {"value": "functional_replacement", "label": "Functional Replacement Cost"},
+                    ]},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance", "property_photos"],
+                "recommended": True,
+            },
+            "commercial_auto": {
+                "label": "Commercial Auto",
+                "icon": "truck",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "number_of_vehicles", "label": "Number of Vehicles", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance", "vehicle_schedule"],
+                "recommended": False,
+            },
+            "bop": {
+                "label": "Business Owner's Policy (BOP)",
+                "icon": "shield-check",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
+                        {"value": "monthly", "label": "Monthly"},
+                        {"value": "quarterly", "label": "Quarterly"},
+                        {"value": "semi_annual", "label": "Semi-Annual"},
+                        {"value": "annual", "label": "Annual"},
+                    ]},
+                    {"key": "property_address", "label": "Property Address", "type": "textarea", "required": False},
+                    {"key": "property_limit", "label": "Property Limit", "type": "number", "required": False},
+                    {"key": "liability_limit", "label": "Liability Limit", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance"],
+                "recommended": False,
+            },
+            "cyber_liability": {
+                "label": "Cyber Liability",
+                "icon": "wifi",
+                "fields": [
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                    {"key": "coverage_basis", "label": "Coverage Basis", "type": "select", "required": False, "options": [
+                        {"value": "claims_made", "label": "Claims-Made"},
+                        {"value": "occurrence", "label": "Occurrence"},
+                    ]},
+                    {"key": "retroactive_date", "label": "Retroactive Date", "type": "date", "required": False},
+                    {"key": "per_incident_limit", "label": "Per Incident Limit", "type": "number", "required": False},
+                    {"key": "aggregate_limit", "label": "Aggregate Limit", "type": "number", "required": False},
+                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                ],
+                "file_slots": ["policy_document", "certificate_of_insurance"],
+                "recommended": False,
+            },
+            "other_business_insurance": {
+                "label": "Other Business Insurance",
+                "icon": "shield-plus",
+                "fields": [
+                    {"key": "insurance_type", "label": "Insurance Type", "type": "text", "required": True},
+                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
                     {"key": "policy_number", "label": "Policy Number", "type": "text", "required": False, "encrypted": True},
-                    {"key": "coverage_type", "label": "Coverage Type", "type": "text", "required": False},
                     {"key": "premium", "label": "Premium", "type": "number", "required": False},
                     {"key": "start_date", "label": "Start Date", "type": "date", "required": False},
                     {"key": "end_date", "label": "End Date", "type": "date", "required": False},
@@ -633,19 +797,125 @@ COVERAGE_DEFINITIONS = {
         "plan_limits": [],
         "default_rows": [],
     },
-    "business_insurance": {
+    "general_liability": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # Bodily Injury & Property Damage
+            {"key": "bodily_injury", "label": "Bodily Injury", "section": "Bodily Injury & Property Damage", "sort_order": 0},
+            {"key": "property_damage", "label": "Property Damage", "section": "Bodily Injury & Property Damage", "sort_order": 1},
+            # Additional Coverage
+            {"key": "personal_advertising_injury", "label": "Personal & Advertising Injury", "section": "Additional Coverage", "sort_order": 2},
+            {"key": "products_completed_ops", "label": "Products-Completed Operations", "section": "Additional Coverage", "sort_order": 3},
+            {"key": "fire_damage_legal", "label": "Fire Damage (Any One Fire)", "section": "Additional Coverage", "sort_order": 4},
+            {"key": "medical_expense", "label": "Medical Expense (Any One Person)", "section": "Additional Coverage", "sort_order": 5},
+        ],
+    },
+    "professional_liability": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # Coverage Limits
+            {"key": "per_claim", "label": "Per Claim Limit", "section": "Coverage Limits", "sort_order": 0},
+            {"key": "aggregate", "label": "Aggregate Limit", "section": "Coverage Limits", "sort_order": 1},
+            {"key": "defense_costs", "label": "Defense Costs", "section": "Coverage Limits", "sort_order": 2},
+            # Additional Coverage
+            {"key": "disciplinary_proceedings", "label": "Disciplinary Proceedings", "section": "Additional Coverage", "sort_order": 3},
+            {"key": "cyber_incident", "label": "Cyber Incident Sub-Limit", "section": "Additional Coverage", "sort_order": 4},
+        ],
+    },
+    "workers_compensation": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # Part A — Statutory
+            {"key": "statutory_benefits", "label": "Statutory Benefits", "section": "Part A — Workers' Compensation", "sort_order": 0},
+            # Part B — Employers' Liability
+            {"key": "each_accident", "label": "Each Accident", "section": "Part B — Employers' Liability", "sort_order": 1},
+            {"key": "disease_each_employee", "label": "Disease — Each Employee", "section": "Part B — Employers' Liability", "sort_order": 2},
+            {"key": "disease_policy_limit", "label": "Disease — Policy Limit", "section": "Part B — Employers' Liability", "sort_order": 3},
+        ],
+    },
+    "commercial_property": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # Property Coverage
+            {"key": "building", "label": "Building", "section": "Property Coverage", "sort_order": 0},
+            {"key": "business_personal_property", "label": "Business Personal Property", "section": "Property Coverage", "sort_order": 1},
+            {"key": "tenants_improvements", "label": "Tenants' Improvements", "section": "Property Coverage", "sort_order": 2},
+            # Business Income
+            {"key": "business_income", "label": "Business Income", "section": "Business Income", "sort_order": 3},
+            {"key": "extra_expense", "label": "Extra Expense", "section": "Business Income", "sort_order": 4},
+            # Additional Coverage
+            {"key": "equipment_breakdown", "label": "Equipment Breakdown", "section": "Additional Coverage", "sort_order": 5},
+            {"key": "spoilage", "label": "Spoilage", "section": "Additional Coverage", "sort_order": 6},
+            {"key": "ordinance_law", "label": "Ordinance or Law", "section": "Additional Coverage", "sort_order": 7},
+        ],
+    },
+    "commercial_auto": {
         "layout": "standard",
         "supports_providers": False,
         "plan_limits": [],
         "default_rows": [
             # Liability Coverage
-            {"key": "general_liability", "label": "General Liability", "section": "Liability Coverage", "sort_order": 0},
-            {"key": "professional_liability", "label": "Professional Liability (E&O)", "section": "Liability Coverage", "sort_order": 1},
-            # Property & Operations
-            {"key": "property", "label": "Business Property", "section": "Property & Operations", "sort_order": 2},
-            {"key": "business_interruption", "label": "Business Interruption", "section": "Property & Operations", "sort_order": 3},
-            # Employment Coverage
-            {"key": "workers_comp", "label": "Workers' Compensation", "section": "Employment Coverage", "sort_order": 4},
+            {"key": "bodily_injury", "label": "Bodily Injury Liability", "section": "Liability Coverage", "sort_order": 0},
+            {"key": "property_damage", "label": "Property Damage Liability", "section": "Liability Coverage", "sort_order": 1},
+            # Uninsured/Underinsured
+            {"key": "um_uim_bi", "label": "UM/UIM Bodily Injury", "section": "Uninsured/Underinsured Motorist", "sort_order": 2},
+            {"key": "um_uim_pd", "label": "UM/UIM Property Damage", "section": "Uninsured/Underinsured Motorist", "sort_order": 3},
+            # Physical Damage
+            {"key": "collision", "label": "Collision", "section": "Physical Damage", "sort_order": 4},
+            {"key": "comprehensive", "label": "Comprehensive", "section": "Physical Damage", "sort_order": 5},
+            # Additional
+            {"key": "hired_auto", "label": "Hired Auto Liability", "section": "Additional Coverage", "sort_order": 6},
+            {"key": "non_owned_auto", "label": "Non-Owned Auto Liability", "section": "Additional Coverage", "sort_order": 7},
+            {"key": "cargo", "label": "Cargo / Motor Truck Cargo", "section": "Additional Coverage", "sort_order": 8},
         ],
+    },
+    "bop": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # Property Coverage
+            {"key": "building", "label": "Building", "section": "Property Coverage", "sort_order": 0},
+            {"key": "business_personal_property", "label": "Business Personal Property", "section": "Property Coverage", "sort_order": 1},
+            {"key": "business_income", "label": "Business Income", "section": "Property Coverage", "sort_order": 2},
+            # General Liability
+            {"key": "general_liability_per_occurrence", "label": "Per Occurrence", "section": "General Liability", "sort_order": 3},
+            {"key": "general_liability_aggregate", "label": "General Aggregate", "section": "General Liability", "sort_order": 4},
+            {"key": "products_completed_ops", "label": "Products-Completed Operations", "section": "General Liability", "sort_order": 5},
+            # Additional Coverage
+            {"key": "equipment_breakdown", "label": "Equipment Breakdown", "section": "Additional Coverage", "sort_order": 6},
+            {"key": "data_breach", "label": "Data Breach", "section": "Additional Coverage", "sort_order": 7},
+        ],
+    },
+    "cyber_liability": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [
+            # First-Party Coverage
+            {"key": "data_breach_response", "label": "Data Breach Response", "section": "First-Party Coverage", "sort_order": 0},
+            {"key": "network_business_interruption", "label": "Network Business Interruption", "section": "First-Party Coverage", "sort_order": 1},
+            {"key": "cyber_extortion", "label": "Cyber Extortion / Ransomware", "section": "First-Party Coverage", "sort_order": 2},
+            {"key": "data_recovery", "label": "Data Recovery", "section": "First-Party Coverage", "sort_order": 3},
+            # Third-Party Coverage
+            {"key": "network_security_liability", "label": "Network Security Liability", "section": "Third-Party Coverage", "sort_order": 4},
+            {"key": "privacy_liability", "label": "Privacy Liability", "section": "Third-Party Coverage", "sort_order": 5},
+            {"key": "regulatory_defense", "label": "Regulatory Defense & Penalties", "section": "Third-Party Coverage", "sort_order": 6},
+            {"key": "media_liability", "label": "Media Liability", "section": "Third-Party Coverage", "sort_order": 7},
+        ],
+    },
+    "other_business_insurance": {
+        "layout": "standard",
+        "supports_providers": False,
+        "plan_limits": [],
+        "default_rows": [],
     },
 }

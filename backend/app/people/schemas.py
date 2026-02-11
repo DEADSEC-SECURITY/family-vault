@@ -57,3 +57,23 @@ class PersonOut(BaseModel):
     def full_name(self) -> str:
         """Return the full name of the person."""
         return f"{self.first_name} {self.last_name}"
+
+
+class LinkPersonRequest(BaseModel):
+    person_id: str
+    role: str | None = None
+
+
+class LinkedPersonOut(BaseModel):
+    id: str
+    person_id: str
+    item_id: str
+    role: str | None = None
+    first_name: str
+    last_name: str
+    email: str | None = None
+    phone: str | None = None
+    relationship: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

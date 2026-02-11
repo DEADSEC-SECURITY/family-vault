@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.auth.models import User
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, verify_item_ownership
 from app.items.models import Item
 from app.orgs.service import get_active_org_id
 from app.reminders.models import CustomReminder
-from app.reminders.schemas import CustomReminderCreate, CustomReminderUpdate
+from app.reminders.schemas import CustomReminderCreate, CustomReminderOut, CustomReminderUpdate
 from app.reminders.service import (
     get_all_reminders_for_item,
     get_reminders,
@@ -16,7 +16,7 @@ from app.reminders.service import (
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
 
-@router.get("")
+@router.get("", response_model=list[CustomReminderOut])
 def list_reminders(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
@@ -25,7 +25,7 @@ def list_reminders(
     return get_reminders(db, org_id, days_ahead=90)
 
 
-@router.get("/overdue")
+@router.get("/overdue", response_model=list[CustomReminderOut])
 def list_overdue(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
@@ -38,7 +38,7 @@ def list_overdue(
 # ── Custom reminder CRUD ──────────────────────────────────────────
 
 
-@router.get("/custom")
+@router.get("/custom", response_model=list[CustomReminderOut])
 def list_custom_reminders(
     item_id: str = Query(...),
     user: User = Depends(get_current_user),
@@ -48,22 +48,14 @@ def list_custom_reminders(
     return get_all_reminders_for_item(db, item_id, org_id)
 
 
-@router.post("/custom", status_code=201)
+@router.post("/custom", status_code=201, response_model=CustomReminderOut)
 def create_custom_reminder(
     data: CustomReminderCreate,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-
-    # Verify item belongs to user's org
-    item = (
-        db.query(Item)
-        .filter(Item.id == data.item_id, Item.org_id == org_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    item = verify_item_ownership(db, data.item_id, org_id)
 
     reminder = CustomReminder(
         item_id=data.item_id,
@@ -101,7 +93,7 @@ def create_custom_reminder(
     }
 
 
-@router.patch("/custom/{reminder_id}")
+@router.patch("/custom/{reminder_id}", response_model=CustomReminderOut)
 def update_custom_reminder(
     reminder_id: str,
     data: CustomReminderUpdate,
@@ -152,8 +144,8 @@ def update_custom_reminder(
         "item_name": item.name if item else "",
         "category": item.category if item else "",
         "subcategory": item.subcategory if item else "",
-        "title": reminder.title,
-        "remind_date": reminder.remind_date.isoformat(),
+        "field_label": reminder.title,
+        "date": reminder.remind_date.isoformat(),
         "days_until": days_until,
         "is_overdue": days_until < 0,
         "is_custom": True,
@@ -198,15 +190,7 @@ def generate_business_reminders(
     Regenerates reminders each time it's called (deletes old auto-generated ones first).
     """
     org_id = get_active_org_id(user, db)
-
-    # Verify item exists and belongs to org
-    item = (
-        db.query(Item)
-        .filter(Item.id == item_id, Item.org_id == org_id, Item.is_archived == False)
-        .first()
-    )
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    item = verify_item_ownership(db, item_id, org_id, allow_archived=False)
 
     # Only for business entities
     if item.category != "business":
@@ -242,7 +226,7 @@ def generate_business_reminders(
         elif fv.field_key == "formation_date":
             try:
                 formation_date = datetime.fromisoformat(fv.field_value).date()
-            except:
+            except (ValueError, TypeError):
                 pass
         elif fv.field_key == "has_employees":
             has_employees = fv.field_value == "yes"
@@ -252,7 +236,7 @@ def generate_business_reminders(
     # Delete existing auto-generated reminders for this item before creating new ones
     db.query(CustomReminder).filter(
         CustomReminder.item_id == item_id,
-        CustomReminder.is_auto_generated == True
+        CustomReminder.is_auto_generated == True  # noqa: E712
     ).delete()
     db.commit()
 

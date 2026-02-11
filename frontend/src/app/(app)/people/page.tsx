@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Users, Plus, Search, Loader2 } from "lucide-react";
+import { Users, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Person } from "@/lib/api";
@@ -75,6 +76,7 @@ export default function PeoplePage() {
           <Input
             type="text"
             placeholder="Search people..."
+            aria-label="Search people"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -84,35 +86,25 @@ export default function PeoplePage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchQuery ? "No people found" : "No people yet"}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {searchQuery
-                ? "Try adjusting your search"
-                : "Add your first family member or beneficiary"}
-            </p>
-            {!searchQuery && (
-              <Button onClick={() => router.push("/people/new")}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Person
-              </Button>
-            )}
-          </div>
-        ) : (
+        <EmptyState
+          loading={loading}
+          icon={<Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />}
+          spinnerClass="text-violet-600"
+          hasResults={filtered.length > 0}
+          searchActive={!!searchQuery}
+          entityName="people"
+          onAdd={() => router.push("/people/new")}
+        >
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-6">
             {filtered.map((person) => (
               <Card
                 key={person.id}
                 className="cursor-pointer hover:shadow-lg transition-shadow"
+                role="link"
+                tabIndex={0}
+                aria-label={`View ${person.first_name} ${person.last_name}`}
                 onClick={() => router.push(`/people/${person.id}`)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/people/${person.id}`); } }}
               >
                 <CardContent className="p-4">
                   {/* 1:1 Photo */}
@@ -153,7 +145,7 @@ export default function PeoplePage() {
               </Card>
             ))}
           </div>
-        )}
+        </EmptyState>
       </div>
     </div>
   );

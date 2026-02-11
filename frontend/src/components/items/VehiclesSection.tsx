@@ -39,29 +39,20 @@ interface VehiclesSectionProps {
   itemId: string | undefined; // undefined in create mode
 }
 
+const emptyForm = { name: "", plate: "", vin: "" };
+
 export function VehiclesSection({ itemId }: VehiclesSectionProps) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [allOrgVehicles, setAllOrgVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addMode, setAddMode] = useState<"create" | "existing" | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // Create form state
-  const [newName, setNewName] = useState("");
-  const [newPlate, setNewPlate] = useState("");
-  const [newVin, setNewVin] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  // Edit form state
-  const [editName, setEditName] = useState("");
-  const [editPlate, setEditPlate] = useState("");
-  const [editVin, setEditVin] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // Assign existing state
+  // Consolidated form state
+  const [createForm, setCreateForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState<{ id: string | null } & typeof emptyForm>({ id: null, ...emptyForm });
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
-  const [assigning, setAssigning] = useState(false);
 
   const fetchVehicles = useCallback(async () => {
     if (!itemId) return;
@@ -94,31 +85,29 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
   const availableVehicles = allOrgVehicles.filter((v) => !assignedIds.has(v.id));
 
   const handleCreate = async () => {
-    if (!itemId || !newName.trim()) return;
-    setCreating(true);
+    if (!itemId || !createForm.name.trim()) return;
+    setBusy(true);
     try {
       const vehicle = await api.vehicles.create({
-        name: newName.trim(),
-        license_plate: newPlate.trim() || null,
-        vin: newVin.trim() || null,
+        name: createForm.name.trim(),
+        license_plate: createForm.plate.trim() || null,
+        vin: createForm.vin.trim() || null,
       });
       await api.vehicles.assign(itemId, vehicle.id);
-      setNewName("");
-      setNewPlate("");
-      setNewVin("");
+      setCreateForm(emptyForm);
       setAddOpen(false);
       setAddMode(null);
       fetchVehicles();
     } catch {
       // silently fail
     } finally {
-      setCreating(false);
+      setBusy(false);
     }
   };
 
   const handleAssign = async () => {
     if (!itemId || !selectedVehicleId) return;
-    setAssigning(true);
+    setBusy(true);
     try {
       await api.vehicles.assign(itemId, selectedVehicleId);
       setSelectedVehicleId("");
@@ -128,7 +117,7 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
     } catch {
       // silently fail
     } finally {
-      setAssigning(false);
+      setBusy(false);
     }
   };
 
@@ -143,27 +132,24 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
   };
 
   const startEdit = (v: Vehicle) => {
-    setEditingId(v.id);
-    setEditName(v.name);
-    setEditPlate(v.license_plate || "");
-    setEditVin(v.vin || "");
+    setEditForm({ id: v.id, name: v.name, plate: v.license_plate || "", vin: v.vin || "" });
   };
 
   const handleSaveEdit = async () => {
-    if (!editingId || !editName.trim()) return;
-    setSaving(true);
+    if (!editForm.id || !editForm.name.trim()) return;
+    setBusy(true);
     try {
-      await api.vehicles.update(editingId, {
-        name: editName.trim(),
-        license_plate: editPlate.trim() || null,
-        vin: editVin.trim() || null,
+      await api.vehicles.update(editForm.id, {
+        name: editForm.name.trim(),
+        license_plate: editForm.plate.trim() || null,
+        vin: editForm.vin.trim() || null,
       });
-      setEditingId(null);
+      setEditForm({ id: null, ...emptyForm });
       fetchVehicles();
     } catch {
       // silently fail
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
@@ -172,9 +158,7 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
     if (open) {
       fetchOrgVehicles();
       setAddMode(null);
-      setNewName("");
-      setNewPlate("");
-      setNewVin("");
+      setCreateForm(emptyForm);
       setSelectedVehicleId("");
     }
   };
@@ -235,8 +219,8 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                     Name <span className="text-red-400">*</span>
                   </Label>
                   <Input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
+                    value={createForm.name}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
                     placeholder="e.g. 2020 Toyota Camry"
                     className="mt-1 h-8 text-sm"
                   />
@@ -244,8 +228,8 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                 <div>
                   <Label className="text-xs text-gray-500">License Plate</Label>
                   <Input
-                    value={newPlate}
-                    onChange={(e) => setNewPlate(e.target.value)}
+                    value={createForm.plate}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, plate: e.target.value }))}
                     placeholder="e.g. ABC-1234"
                     className="mt-1 h-8 text-sm"
                   />
@@ -253,8 +237,8 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                 <div>
                   <Label className="text-xs text-gray-500">VIN</Label>
                   <Input
-                    value={newVin}
-                    onChange={(e) => setNewVin(e.target.value)}
+                    value={createForm.vin}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, vin: e.target.value }))}
                     placeholder="17-character VIN"
                     maxLength={17}
                     className="mt-1 h-8 text-sm"
@@ -274,10 +258,10 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                     type="button"
                     size="sm"
                     onClick={handleCreate}
-                    disabled={!newName.trim() || creating}
+                    disabled={!createForm.name.trim() || busy}
                     className="ml-auto text-xs"
                   >
-                    {creating ? (
+                    {busy ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                     ) : (
                       <Plus className="h-3.5 w-3.5 mr-1" />
@@ -335,10 +319,10 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                         type="button"
                         size="sm"
                         onClick={handleAssign}
-                        disabled={!selectedVehicleId || assigning}
+                        disabled={!selectedVehicleId || busy}
                         className="ml-auto text-xs"
                       >
-                        {assigning ? (
+                        {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                         ) : (
                           <Check className="h-3.5 w-3.5 mr-1" />
@@ -366,7 +350,7 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
       ) : (
         <div className="space-y-2">
           {vehicles.map((v) =>
-            editingId === v.id ? (
+            editForm.id === v.id ? (
               /* ─── Edit mode row ─── */
               <div
                 key={v.id}
@@ -375,8 +359,8 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                 <div>
                   <Label className="text-xs text-gray-500">Name</Label>
                   <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                     className="mt-1 h-8 text-sm"
                   />
                 </div>
@@ -384,16 +368,16 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                   <div>
                     <Label className="text-xs text-gray-500">License Plate</Label>
                     <Input
-                      value={editPlate}
-                      onChange={(e) => setEditPlate(e.target.value)}
+                      value={editForm.plate}
+                      onChange={(e) => setEditForm((f) => ({ ...f, plate: e.target.value }))}
                       className="mt-1 h-8 text-sm"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-gray-500">VIN</Label>
                     <Input
-                      value={editVin}
-                      onChange={(e) => setEditVin(e.target.value)}
+                      value={editForm.vin}
+                      onChange={(e) => setEditForm((f) => ({ ...f, vin: e.target.value }))}
                       maxLength={17}
                       className="mt-1 h-8 text-sm"
                     />
@@ -404,7 +388,7 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setEditingId(null)}
+                    onClick={() => setEditForm({ id: null, ...emptyForm })}
                     className="text-xs"
                   >
                     Cancel
@@ -413,10 +397,10 @@ export function VehiclesSection({ itemId }: VehiclesSectionProps) {
                     type="button"
                     size="sm"
                     onClick={handleSaveEdit}
-                    disabled={!editName.trim() || saving}
+                    disabled={!editForm.name.trim() || busy}
                     className="text-xs"
                   >
-                    {saving ? (
+                    {busy ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                     ) : (
                       <Check className="h-3.5 w-3.5 mr-1" />

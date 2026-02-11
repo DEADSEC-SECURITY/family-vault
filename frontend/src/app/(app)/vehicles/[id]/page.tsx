@@ -39,6 +39,7 @@ export default function VehicleDetailPage({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -98,7 +99,6 @@ export default function VehicleDetailPage({
       } catch (err) {
         console.error("Failed to load vehicle:", err);
         if (mounted) {
-          alert("Failed to load vehicle. Redirecting to vehicles list.");
           router.push("/vehicles");
         }
       } finally {
@@ -115,10 +115,11 @@ export default function VehicleDetailPage({
 
   const handleSave = async () => {
     if (!vehicleId || !name.trim()) {
-      alert("Vehicle name is required");
+      setError("Vehicle name is required.");
       return;
     }
 
+    setError(null);
     setSaving(true);
     try {
       const updated = await api.vehicles.update(vehicleId, {
@@ -133,7 +134,7 @@ export default function VehicleDetailPage({
       setEditing(false);
     } catch (err) {
       console.error("Failed to update vehicle:", err);
-      alert("Failed to update vehicle. Please try again.");
+      setError("Failed to update vehicle. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -148,7 +149,7 @@ export default function VehicleDetailPage({
       router.push("/vehicles");
     } catch (err) {
       console.error("Failed to delete vehicle:", err);
-      alert("Failed to delete vehicle. Please try again.");
+      setError("Failed to delete vehicle. Please try again.");
       setDeleting(false);
     }
   };
@@ -191,6 +192,7 @@ export default function VehicleDetailPage({
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Back to vehicles"
             onClick={() => router.push("/vehicles")}
           >
             <ArrowLeft className="h-5 w-5" />
@@ -249,6 +251,11 @@ export default function VehicleDetailPage({
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
+        {error && (
+          <div role="alert" className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
         <div className="grid gap-6 pb-6">
           {/* Vehicle Information Card */}
           <Card>
@@ -527,10 +534,12 @@ export default function VehicleDetailPage({
               ) : (
                 <div className="space-y-2">
                   {policies.map((policy) => (
-                    <div
+                    <button
                       key={policy.id}
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                      type="button"
+                      className="flex items-center justify-between w-full text-left p-3 border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => router.push(`/insurance/${policy.id}`)}
+                      aria-label={`View policy: ${policy.name}`}
                     >
                       <div className="flex items-center gap-3">
                         <FileText className="h-5 w-5 text-blue-600" />
@@ -548,7 +557,7 @@ export default function VehicleDetailPage({
                           </p>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}

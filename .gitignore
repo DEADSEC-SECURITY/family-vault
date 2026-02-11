@@ -423,6 +423,19 @@ lerna-debug.log*
 .env.test
 .env.production
 
+# Secrets & credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+service-account.json
+secrets.yaml
+secrets.yml
+*-secret.json
+
 # temp directory
 .temp
 .tmp

@@ -12,6 +12,12 @@ from app.orgs.models import OrgMembership, Organization  # noqa: F401
 from app.items.models import Item, ItemFieldValue  # noqa: F401
 from app.files.models import FileAttachment  # noqa: F401
 from app.reminders.models import CustomReminder  # noqa: F401
+from app.contacts.models import ItemContact  # noqa: F401
+from app.vehicles.models import Vehicle, ItemVehicle  # noqa: F401
+from app.people.models import Person, ItemPerson  # noqa: F401
+from app.coverage.models import CoveragePlanLimit, CoverageRow, InNetworkProvider  # noqa: F401
+from app.item_links.models import ItemLink  # noqa: F401
+from app.saved_contacts.models import SavedContact, ItemSavedContact  # noqa: F401
 
 config = context.config
 

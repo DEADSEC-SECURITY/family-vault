@@ -59,7 +59,7 @@ class ItemFieldValue(Base):
     item_id: Mapped[str] = mapped_column(
         ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    field_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    field_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     field_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     field_type: Mapped[str] = mapped_column(String(20), default="text")
 

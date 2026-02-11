@@ -26,7 +26,7 @@ from app.contacts.schemas import (
     ItemContactUpdate,
 )
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, verify_item_ownership
 from app.items.models import Item
 from app.orgs.service import get_active_org_id
 
@@ -56,10 +56,13 @@ def _compose_address_value(
 @router.get("", response_model=list[ItemContactOut])
 def list_contacts_for_item(
     item_id: str = Query(...),
+    page: int = 1,
+    limit: int = 50,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
+    offset = (max(page, 1) - 1) * limit
     contacts = (
         db.query(ItemContact)
         .filter(
@@ -67,6 +70,8 @@ def list_contacts_for_item(
             ItemContact.org_id == org_id,
         )
         .order_by(ItemContact.sort_order.asc(), ItemContact.created_at.asc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return contacts
@@ -79,15 +84,7 @@ def create_contact(
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-
-    # Verify item belongs to user's org
-    item = (
-        db.query(Item)
-        .filter(Item.id == data.item_id, Item.org_id == org_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    verify_item_ownership(db, data.item_id, org_id)
 
     # If no sort_order given, place at end
     if data.sort_order == 0:
@@ -133,15 +130,7 @@ def reorder_contacts(
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-
-    # Verify item belongs to user's org
-    item = (
-        db.query(Item)
-        .filter(Item.id == data.item_id, Item.org_id == org_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
+    verify_item_ownership(db, data.item_id, org_id)
 
     for entry in data.contacts:
         db.query(ItemContact).filter(

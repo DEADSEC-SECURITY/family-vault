@@ -55,7 +55,7 @@ def get_item_endpoint(
     return get_item(db, item_id, org_id, include_archived=True)
 
 
-@router.put("/{item_id}", response_model=ItemResponse)
+@router.patch("/{item_id}", response_model=ItemResponse)
 def update_item_endpoint(
     item_id: str,
     data: ItemUpdate,

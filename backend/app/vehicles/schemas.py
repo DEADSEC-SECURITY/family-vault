@@ -16,7 +16,7 @@ class VehicleCreate(BaseModel):
     name: str
     license_plate: str | None = None
     vin: str | None = None
-    acquired_date: str | None = None  # ISO date string
+    acquired_date: date | None = None
     owner_id: str | None = None
     primary_driver_id: str | None = None
 
@@ -25,7 +25,7 @@ class VehicleUpdate(BaseModel):
     name: str | None = None
     license_plate: str | None = None
     vin: str | None = None
-    acquired_date: str | None = None  # ISO date string
+    acquired_date: date | None = None
     owner_id: str | None = None
     primary_driver_id: str | None = None
 
@@ -35,7 +35,7 @@ class VehicleOut(BaseModel):
     name: str
     license_plate: str | None = None
     vin: str | None = None
-    acquired_date: str | None = None  # ISO date string
+    acquired_date: date | None = None
     owner_id: str | None = None
     primary_driver_id: str | None = None
     owner_name: str | None = None  # computed field

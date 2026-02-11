@@ -2,7 +2,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.items.models import Item, ItemFieldValue
-from app.items.service import _item_to_response
+from app.items.service import _item_to_response, _get_org_key
 from app.items.schemas import ItemResponse
 
 
@@ -55,4 +55,5 @@ def search_items(
             seen.add(item.id)
             items.append(item)
 
-    return [_item_to_response(i) for i in items]
+    org_key = _get_org_key(db, org_id)
+    return [_item_to_response(i, org_key) for i in items]

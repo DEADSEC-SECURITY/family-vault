@@ -241,13 +241,55 @@ To add a new item category (e.g., "Medical Records"):
    }
    ```
 
-2. **Add icon** in frontend's `ItemCard.tsx` and category page
+2. **Add icon** in `frontend/src/components/items/SubcategoryIcon.tsx`:
+   ```typescript
+   // Add to SUBCATEGORY_ICONS:
+   prescription: { icon: Pill, bgColor: "bg-green-100", iconColor: "text-green-600" },
+   ```
+   And add a category default to `CATEGORY_DEFAULTS` if it's a new top-level category.
 
 3. **Create route** in `frontend/src/app/(app)/medical/`
 
 4. **Add to sidebar** in `frontend/src/components/layout/Sidebar.tsx`
 
 5. **Test thoroughly** with create/edit/delete operations
+
+## Shared Utilities & Patterns
+
+When contributing code, leverage existing shared utilities to avoid duplication:
+
+### Backend
+
+- **Org helpers**: Use `get_active_org_id(user, db)` from `app.orgs.service` instead of writing per-router helpers:
+  ```python
+  from app.orgs.service import get_active_org_id
+
+  @router.get("/my-endpoint")
+  def my_endpoint(user = Depends(get_current_user), db = Depends(get_db)):
+      org_id = get_active_org_id(user, db)
+  ```
+  Use `get_active_org(user, db)` when you need the full org object (e.g., for encryption key access).
+
+### Frontend
+
+- **Formatting**: Import from `@/lib/format` instead of writing local helpers:
+  ```typescript
+  import { humanize, titleCase, formatDate, getFieldValue, repeatLabel } from "@/lib/format";
+  ```
+
+- **Icons**: Use `SubcategoryIcon` component instead of writing icon switch statements:
+  ```tsx
+  import { SubcategoryIcon } from "@/components/items/SubcategoryIcon";
+  <SubcategoryIcon subcategory="auto_insurance" category="insurance" />
+  ```
+
+- **Reminders**: Use `ReminderCard` component with the appropriate variant:
+  ```tsx
+  import { ReminderCard } from "@/components/items/ReminderCard";
+  <ReminderCard reminder={r} variant="compact" />   // RemindersPanel
+  <ReminderCard reminder={r} variant="sidebar" />    // RightSidebar
+  <ReminderCard reminder={r} />                      // Full page (default)
+  ```
 
 ## Commit Message Guidelines
 

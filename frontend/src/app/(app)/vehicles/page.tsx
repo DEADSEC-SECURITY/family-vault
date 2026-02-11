@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Car, Plus, Search, Loader2, Pencil, Trash2 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -141,6 +142,7 @@ export default function VehiclesPage() {
           <Input
             type="text"
             placeholder="Search vehicles..."
+            aria-label="Search vehicles"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -150,35 +152,25 @@ export default function VehiclesPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12">
-            <Car className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchQuery ? "No vehicles found" : "No vehicles yet"}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {searchQuery
-                ? "Try adjusting your search"
-                : "Add your first vehicle to get started"}
-            </p>
-            {!searchQuery && (
-              <Button onClick={() => router.push("/vehicles/new")}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Vehicle
-              </Button>
-            )}
-          </div>
-        ) : (
+        <EmptyState
+          loading={loading}
+          icon={<Car className="mx-auto h-12 w-12 text-gray-400 mb-4" />}
+          spinnerClass="text-blue-600"
+          hasResults={filtered.length > 0}
+          searchActive={!!searchQuery}
+          entityName="vehicles"
+          onAdd={() => router.push("/vehicles/new")}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-6">
             {filtered.map((vehicle) => (
               <Card
                 key={vehicle.id}
                 className="group cursor-pointer hover:shadow-lg transition-shadow relative"
+                role="link"
+                tabIndex={0}
+                aria-label={`View ${vehicle.name}`}
                 onClick={() => router.push(`/vehicles/${vehicle.id}`)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/vehicles/${vehicle.id}`); } }}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
@@ -223,6 +215,7 @@ export default function VehiclesPage() {
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm"
+                        aria-label={`Edit ${vehicle.name}`}
                         onClick={(e) => openEdit(e, vehicle)}
                       >
                         <Pencil className="h-3.5 w-3.5 text-gray-600" />
@@ -234,6 +227,7 @@ export default function VehiclesPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm"
+                            aria-label={`Delete ${vehicle.name}`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Trash2 className="h-3.5 w-3.5 text-red-600" />
@@ -264,7 +258,7 @@ export default function VehiclesPage() {
               </Card>
             ))}
           </div>
-        )}
+        </EmptyState>
       </div>
 
       {/* Create/Edit Dialog */}

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -32,7 +34,7 @@ class FileOut(BaseModel):
     file_size: int
     mime_type: str
     purpose: str | None
-    created_at: str
+    created_at: datetime
 
 
 class ItemResponse(BaseModel):
@@ -45,8 +47,8 @@ class ItemResponse(BaseModel):
     is_archived: bool
     fields: list[FieldValueOut]
     files: list[FileOut]
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class ItemListResponse(BaseModel):

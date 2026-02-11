@@ -8,13 +8,18 @@ import {
   FileSpreadsheet,
   FileText,
   Globe,
+  HardHat,
   Heart,
   Home,
   IdCard,
   Plane,
   Shield,
+  ShieldCheck,
+  ShieldPlus,
+  Truck,
   User,
   Users,
+  Wifi,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -43,7 +48,14 @@ const SUBCATEGORY_ICONS: Record<string, IconConfig> = {
   partnership: { icon: Users, bgColor: "bg-purple-100", iconColor: "text-purple-600" },
   sole_proprietorship: { icon: User, bgColor: "bg-teal-100", iconColor: "text-teal-600" },
   business_license: { icon: FileBadge, bgColor: "bg-green-100", iconColor: "text-green-600" },
-  business_insurance: { icon: Shield, bgColor: "bg-amber-100", iconColor: "text-amber-600" },
+  general_liability: { icon: Shield, bgColor: "bg-amber-100", iconColor: "text-amber-600" },
+  professional_liability: { icon: Briefcase, bgColor: "bg-violet-100", iconColor: "text-violet-600" },
+  workers_compensation: { icon: HardHat, bgColor: "bg-orange-100", iconColor: "text-orange-600" },
+  commercial_property: { icon: Building, bgColor: "bg-cyan-100", iconColor: "text-cyan-600" },
+  commercial_auto: { icon: Truck, bgColor: "bg-blue-100", iconColor: "text-blue-600" },
+  bop: { icon: ShieldCheck, bgColor: "bg-emerald-100", iconColor: "text-emerald-600" },
+  cyber_liability: { icon: Wifi, bgColor: "bg-sky-100", iconColor: "text-sky-600" },
+  other_business_insurance: { icon: ShieldPlus, bgColor: "bg-gray-100", iconColor: "text-gray-600" },
   tax_document: { icon: FileSpreadsheet, bgColor: "bg-red-100", iconColor: "text-red-600" },
 };
 

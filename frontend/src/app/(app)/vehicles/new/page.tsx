@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 export default function NewVehiclePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -50,10 +51,11 @@ export default function NewVehiclePage() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert("Vehicle name is required");
+      setError("Vehicle name is required.");
       return;
     }
 
+    setError(null);
     setSaving(true);
     try {
       const vehicle = await api.vehicles.create({
@@ -67,7 +69,7 @@ export default function NewVehiclePage() {
       router.push(`/vehicles/${vehicle.id}`);
     } catch (err) {
       console.error("Failed to create vehicle:", err);
-      alert("Failed to create vehicle. Please try again.");
+      setError("Failed to create vehicle. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -94,6 +96,7 @@ export default function NewVehiclePage() {
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Back to vehicles"
           onClick={() => router.push("/vehicles")}
         >
           <ArrowLeft className="h-5 w-5" />
@@ -113,6 +116,11 @@ export default function NewVehiclePage() {
 
       {/* Form */}
       <div className="flex-1 overflow-auto">
+        {error && (
+          <div role="alert" className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Vehicle Information</CardTitle>

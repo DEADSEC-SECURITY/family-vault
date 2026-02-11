@@ -7,9 +7,11 @@ import { SubcategorySection } from "./SubcategorySection";
 
 interface CategoryPageProps {
   categorySlug: string;
+  subcategoryFilter?: string[];
+  title?: string;
 }
 
-export function CategoryPage({ categorySlug }: CategoryPageProps) {
+export function CategoryPage({ categorySlug, subcategoryFilter, title }: CategoryPageProps) {
   const [category, setCategory] = useState<CategoryDetail | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,13 +44,13 @@ export function CategoryPage({ categorySlug }: CategoryPageProps) {
     return <div className="text-red-500">Category not found</div>;
   }
 
-  const isInsurance = categorySlug === "insurance";
+  const isInsurance = categorySlug === "insurance" || title === "Business Insurance";
 
   return (
     <div className="pb-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
-          {category.label}
+          {title || category.label}
         </h1>
 
         {isInsurance && (
@@ -64,17 +66,19 @@ export function CategoryPage({ categorySlug }: CategoryPageProps) {
         )}
       </div>
 
-      {category.subcategories.map((sub) => {
-        const subItems = items.filter((i) => i.subcategory === sub.key);
-        return (
-          <SubcategorySection
-            key={sub.key}
-            subcategory={sub}
-            items={subItems}
-            categorySlug={categorySlug}
-          />
-        );
-      })}
+      {category.subcategories
+        .filter((sub) => !subcategoryFilter || subcategoryFilter.includes(sub.key))
+        .map((sub) => {
+          const subItems = items.filter((i) => i.subcategory === sub.key);
+          return (
+            <SubcategorySection
+              key={sub.key}
+              subcategory={sub}
+              items={subItems}
+              categorySlug={categorySlug}
+            />
+          );
+        })}
     </div>
   );
 }
