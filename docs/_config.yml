@@ -1,7 +1,7 @@
 title: Family Vault Docs
 description: Technical documentation for the Family Vault self-hosted family document vault.
-url: ""
-baseurl: ""
+url: "https://deadsec-security.github.io"
+baseurl: "/family-vault"
 
 remote_theme: just-the-docs/just-the-docs
 
@@ -9,7 +9,7 @@ color_scheme: light
 
 aux_links:
   "GitHub":
-    - "https://github.com/yourusername/family-vault"
+    - "https://github.com/DEADSEC-SECURITY/family-vault"
 
 nav_sort: case_insensitive
 search_enabled: true

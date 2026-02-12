@@ -23,7 +23,7 @@ A self-hosted, open-source family document vault for securely managing IDs, insu
 ## Getting Started
 
 ```bash
-git clone https://github.com/yourusername/family-vault.git
+git clone https://github.com/DEADSEC-SECURITY/family-vault.git
 cd family-vault
 cp .env.example .env
 docker compose up -d --build
@@ -31,7 +31,7 @@ docker compose up -d --build
 
 Open `http://localhost:3000` and register a new account.
 
-See the full [Master Documentation](https://github.com/yourusername/family-vault/blob/main/DOCS.md) for comprehensive coverage of all features.
+See the full [Master Documentation](https://github.com/DEADSEC-SECURITY/family-vault/blob/main/DOCS.md) for comprehensive coverage of all features.
 
 ## Tech Stack
 

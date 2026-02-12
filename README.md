@@ -5,6 +5,10 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Family Vault Dashboard" width="800">
+</p>
+
 ## Overview
 
 Family Vault is a secure, self-hosted digital vault that helps families organize and manage their important documents and information in one centralized place. Think of it as your family's personal operating system for managing IDs, insurance policies, business documents, and more.
@@ -167,6 +171,10 @@ Manage all your family's identification documents:
 
 Each ID card displays with a specialized layout and automatic security number masking.
 
+<p align="center">
+  <img src="docs/screenshots/ids.png" alt="Family IDs" width="800">
+</p>
+
 ### Insurance
 
 Track all insurance policies with comprehensive coverage details:
@@ -174,6 +182,21 @@ Track all insurance policies with comprehensive coverage details:
 - **Auto Insurance** - Link vehicles, track coverage types and limits
 - **Home Insurance** - Property coverage and liability details
 - **Life Insurance** - Beneficiaries and policy details
+
+<p align="center">
+  <img src="docs/screenshots/insurance.png" alt="Insurance Tracking" width="800">
+</p>
+
+### Business Documents
+
+Manage your business entities, licenses, and commercial insurance:
+- LLCs, Corporations, Partnerships, Sole Proprietorships
+- Business licenses and permits with expiration tracking
+- General liability, professional liability, workers' comp, and more
+
+<p align="center">
+  <img src="docs/screenshots/business.png" alt="Business Documents" width="800">
+</p>
 
 ### Reminders
 
@@ -183,13 +206,23 @@ Never miss an expiration date:
 - **Email Notifications** - Optional hourly check sends emails when reminders are due
 - **Repeating Reminders** - Set reminders to repeat annually
 
-### File Management
+<p align="center">
+  <img src="docs/screenshots/reminders.png" alt="Smart Reminders" width="800">
+</p>
+
+### Item Detail & File Management
+
+Each item has a full detail view with editable fields, file upload slots, linked contacts, people, and reminders.
 
 - **Drag & Drop Upload** - Easy file attachment
 - **Image Editor** - Built-in crop and rotate for card images
 - **Auto-orientation** - Portrait images automatically rotate to landscape
 - **Multiple File Slots** - Front/back of cards, policy documents, etc.
 - **Secure Download** - Files are decrypted on-the-fly when you download
+
+<p align="center">
+  <img src="docs/screenshots/item-detail.png" alt="Item Detail View" width="800">
+</p>
 
 ## Development
 
