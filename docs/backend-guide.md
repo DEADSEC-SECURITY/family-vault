@@ -6,7 +6,7 @@ nav_order: 5
 
 # Backend Guide
 
-Python FastAPI backend with SQLAlchemy 2.0, Alembic, and zero-knowledge encryption.
+Python FastAPI backend with SQLAlchemy 2.0, Alembic, and AES-256-GCM encryption.
 
 ---
 
@@ -41,11 +41,6 @@ module/
 | `search` | (none) | Full-text search |
 | `dashboard` | (none) | Org statistics |
 | `email` | (none) | SMTP email sending |
-| `audit` | audit_logs | Audit logging for key actions |
-| `invitations` | invitations | Org invitation management |
-| `business_reminders` | (none) | Business-specific reminder queries |
-| `item_links` | item_links | Parent-child item linking |
-| `saved_contacts` | saved_contacts | Reusable contact templates |
 
 ## Shared Helpers
 
@@ -85,29 +80,17 @@ Field definitions come from `categories/definitions.py` (Python dict, not the da
 
 **Update strategy**: On item update, all `ItemFieldValue` rows are deleted and re-created. The frontend must send ALL field values on every save.
 
-## Encryption
+## File Encryption
 
-### Current: Zero-Knowledge (v2)
-
-Client-side encryption using Web Crypto API. The server stores only encrypted blobs:
+AES-256-GCM envelope encryption:
 
 ```
-User Password → PBKDF2 → Master Key → HKDF → Symmetric Key
-Symmetric Key encrypts user's RSA private key (stored on server)
-Org Key (AES-256-GCM) wrapped per-member via RSA public key
-Items/files encrypted client-side with org key before upload
+SECRET_KEY → HKDF → Master Key
+Master Key → encrypts → Org Key (stored encrypted in DB)
+Org Key + random IV → AES-256-GCM → encrypted file (stored in MinIO)
 ```
 
-### Legacy: Server-Side (v1)
-
-Items with `encryption_version=1` use the old server-side envelope encryption:
-
-```
-SECRET_KEY → HKDF → Master Key → encrypts → Org Key (in DB)
-Org Key + random IV → AES-256-GCM → encrypted file (in MinIO)
-```
-
-Legacy items are lazily migrated to v2 as they are accessed. IV and auth tag stored in `file_attachments` table.
+IV and auth tag stored in `file_attachments` table. On download, the backend decrypts transparently.
 
 ## Migrations
 
