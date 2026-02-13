@@ -365,6 +365,7 @@ export default function PersonDetailPage({
             <div className="flex items-center gap-5 p-6">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center flex-shrink-0">
                 {person.photo_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img
                     src={person.photo_url}
                     alt={`${person.first_name} ${person.last_name}`}

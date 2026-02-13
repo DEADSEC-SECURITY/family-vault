@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
@@ -21,8 +20,6 @@ interface RecoveryCodesCardProps {
 }
 
 const RecoveryCodesCard: React.FC<RecoveryCodesCardProps> = ({ recoveryKey, message, confirmRecovery }) => {
-    const router = useRouter();
-
     const [copied, setCopied] = useState(false);
     const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
 

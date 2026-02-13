@@ -113,6 +113,7 @@ export default function PeoplePage() {
                   {/* 1:1 Photo */}
                   <div className="aspect-square mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center">
                     {person.photo_url ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={person.photo_url}
                         alt={`${person.first_name} ${person.last_name}`}

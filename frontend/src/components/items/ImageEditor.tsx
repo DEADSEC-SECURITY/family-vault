@@ -340,6 +340,7 @@ export function ImageEditor({
               Analysis: {debugInfo.analysisDims.w}×{debugInfo.analysisDims.h}px |
               Best: {debugInfo.bestComponent}
             </p>
+            {/* eslint-disable @next/next/no-img-element */}
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <p className="text-[10px] text-gray-500 mb-1">Blurred</p>
@@ -354,6 +355,7 @@ export function ImageEditor({
                 <img src={debugInfo.dilatedImage} alt="Detection result" className="w-full rounded border" />
               </div>
             </div>
+            {/* eslint-enable @next/next/no-img-element */}
           </div>
         )}
 

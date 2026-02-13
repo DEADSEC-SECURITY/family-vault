@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -30,7 +30,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Copy, Check, ShieldCheck } from "lucide-react";
 import RecoveryCodesCard from "./RecoveryCodesCard";
 
 export function RegisterForm() {
