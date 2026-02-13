@@ -12,6 +12,7 @@ import {
   Heart,
   Home,
   IdCard,
+  KeyRound,
   Plane,
   Shield,
   ShieldCheck,
@@ -57,6 +58,8 @@ const SUBCATEGORY_ICONS: Record<string, IconConfig> = {
   cyber_liability: { icon: Wifi, bgColor: "bg-sky-100", iconColor: "text-sky-600" },
   other_business_insurance: { icon: ShieldPlus, bgColor: "bg-gray-100", iconColor: "text-gray-600" },
   tax_document: { icon: FileSpreadsheet, bgColor: "bg-red-100", iconColor: "text-red-600" },
+  // Security Codes
+  backup_codes: { icon: KeyRound, bgColor: "bg-amber-100", iconColor: "text-amber-600" },
 };
 
 /** Default icons per category when subcategory isn't found */
@@ -64,6 +67,7 @@ const CATEGORY_DEFAULTS: Record<string, IconConfig> = {
   insurance: { icon: Shield, bgColor: "bg-green-100", iconColor: "text-green-600" },
   ids: { icon: IdCard, bgColor: "bg-blue-100", iconColor: "text-blue-600" },
   business: { icon: Briefcase, bgColor: "bg-gray-100", iconColor: "text-gray-600" },
+  security_codes: { icon: KeyRound, bgColor: "bg-amber-100", iconColor: "text-amber-600" },
 };
 
 interface SubcategoryIconProps {
