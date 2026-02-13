@@ -97,6 +97,8 @@ class InviteValidation(BaseModel):
 
 class ResetValidation(BaseModel):
     valid: bool
+    email: str | None = None
+    recovery_encrypted_private_key: str | None = None
 
 
 class OrgKeyExchange(BaseModel):

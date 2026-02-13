@@ -227,7 +227,7 @@ export const api = {
         body: JSON.stringify({ email }),
       }),
     validateReset: (token: string) =>
-      fetchAPI<{ valid: boolean }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
+      fetchAPI<{ valid: boolean; email?: string | null; recovery_encrypted_private_key?: string | null }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
     resetPassword: (data: Record<string, unknown>) =>
       fetchAPI<{ message: string }>("/auth/reset-password", {
         method: "POST",

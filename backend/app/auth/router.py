@@ -430,9 +430,17 @@ def validate_reset(
     token: str = Query(...),
     db: DBSession = Depends(get_db),
 ):
-    """Validate a password reset token."""
+    """Validate a password reset token. Returns email and recovery key for ZK reset."""
     token_obj = validate_reset_token(db, token)
-    return ResetValidation(valid=token_obj is not None)
+    if not token_obj:
+        return ResetValidation(valid=False)
+
+    user = db.query(User).filter(User.id == token_obj.user_id).first()
+    return ResetValidation(
+        valid=True,
+        email=token_obj.email,
+        recovery_encrypted_private_key=user.recovery_encrypted_private_key if user else None,
+    )
 
 
 @router.post("/reset-password")
