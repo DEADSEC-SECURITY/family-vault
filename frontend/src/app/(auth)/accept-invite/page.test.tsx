@@ -27,14 +27,14 @@ vi.mock("@/lib/auth", () => ({
 
 // Mock crypto functions — use inline objects since vi.mock is hoisted
 vi.mock("@/lib/crypto", () => ({
-  deriveMasterKey: vi.fn().mockResolvedValue({} as CryptoKey),
+  deriveMasterKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
   deriveSymmetricKey: vi.fn().mockResolvedValue({} as CryptoKey),
   hashMasterPassword: vi.fn().mockResolvedValue("hashed-password"),
   generateKeyPair: vi.fn().mockResolvedValue({ publicKey: {} as CryptoKey, privateKey: {} as CryptoKey }),
   exportPublicKey: vi.fn().mockResolvedValue("public-key-b64"),
   encryptPrivateKey: vi.fn().mockResolvedValue("encrypted-private-key-b64"),
   importPublicKey: vi.fn().mockResolvedValue({} as CryptoKey),
-  exportRecoveryKey: vi.fn().mockResolvedValue("recovery-key-b64"),
+  exportRecoveryKey: vi.fn().mockReturnValue("recovery-key-b64"),
   encryptPrivateKeyForRecovery: vi.fn().mockResolvedValue("recovery-encrypted-pk"),
 }));
 

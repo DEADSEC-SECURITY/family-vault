@@ -29,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import RecoveryCodesCard from "@/components/auth/RecoveryCodesCard";
 
 export default function AcceptInvitePage() {
   return (
@@ -171,38 +172,7 @@ function AcceptInviteContent() {
 
   // Show recovery key after successful acceptance
   if (recoveryKey) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold">Save Your Recovery Key</CardTitle>
-            <CardDescription>
-              Write this key down and store it somewhere safe. You&apos;ll need it if you ever forget your password.
-              This key will not be shown again.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-md bg-amber-50 border border-amber-200 p-4">
-              <p className="font-mono text-sm break-all select-all text-center">
-                {recoveryKey}
-              </p>
-            </div>
-            <p className="text-xs text-gray-500 text-center">
-              A vault admin still needs to grant you access to the encrypted data.
-              You&apos;ll be notified when access is ready.
-            </p>
-          </CardContent>
-          <CardFooter className="pt-2">
-            <Button
-              className="w-full"
-              onClick={() => router.push("/dashboard")}
-            >
-              I&apos;ve Saved My Recovery Key
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    );
+    return <RecoveryCodesCard recoveryKey={recoveryKey} message={"A vault admin still needs to grant you access to the encrypted data. You&apos;ll be notified when access is ready."} />;
   }
 
   return (

@@ -689,6 +689,116 @@ export const api = {
         { method: "DELETE" },
       ),
   },
+
+  migration: {
+    status: () =>
+      fetchAPI<MigrationStatus>("/items/migration/status"),
+
+    /**
+     * Bulk-migrate all v1 items to v2 client-side encryption.
+     * Fetches each v1 item (server decrypts it), re-encrypts client-side, saves as v2.
+     * Returns the number of items migrated.
+     */
+    migrateItems: async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (!orgKey) throw new Error("No org key available — log in first");
+
+      // Fetch all items (including v1) in pages
+      let migrated = 0;
+      let page = 1;
+      const limit = 50;
+      let total = 0;
+
+      do {
+        const res = await fetchAPI<ItemListResponse>(`/items?page=${page}&limit=${limit}`);
+        if (page === 1) total = res.total;
+        const v1Items = res.items.filter((i) => i.encryption_version !== 2);
+
+        for (const item of v1Items) {
+          // Item fields are already decrypted by server (v1)
+          const payload = await encryptItemPayload({
+            notes: item.notes,
+            fields: item.fields.map((f) => ({ field_key: f.field_key, field_value: f.field_value })),
+          });
+          await fetchAPI(`/items/${item.id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          migrated++;
+          onProgress?.(migrated, total);
+        }
+        page++;
+      } while (page * limit <= total + limit);
+
+      return migrated;
+    },
+
+    /**
+     * Bulk-migrate all v1 files to v2 client-side encryption.
+     * Downloads each v1 file (server decrypts it), re-encrypts client-side, re-uploads as v2.
+     * Returns the number of files migrated.
+     */
+    migrateFiles: async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (!orgKey) throw new Error("No org key available — log in first");
+
+      // Fetch all items to find v1 files
+      let migrated = 0;
+      let page = 1;
+      const limit = 50;
+      let total = 0;
+      const v1Files: Array<{ fileId: string; itemId: string; fileName: string; purpose: string | null }> = [];
+
+      do {
+        const res = await fetchAPI<ItemListResponse>(`/items?page=${page}&limit=${limit}`);
+        if (page === 1) total = res.total;
+        for (const item of res.items) {
+          for (const file of item.files) {
+            if (file.encryption_version !== 2) {
+              v1Files.push({ fileId: file.id, itemId: item.id, fileName: file.file_name, purpose: file.purpose });
+            }
+          }
+        }
+        page++;
+      } while (page * limit <= total + limit);
+
+      const fileTotal = v1Files.length;
+
+      for (const { fileId, itemId, fileName, purpose } of v1Files) {
+        // Download (server decrypts v1)
+        const res = await fetch(`${API_BASE}/files/${fileId}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) continue;
+        const plainBytes = await res.arrayBuffer();
+
+        // Encrypt client-side
+        const encryptedBytes = await encryptFile(plainBytes, orgKey);
+        const blob = new Blob([encryptedBytes]);
+
+        // Delete old file
+        await fetchAPI<void>(`/files/${fileId}`, { method: "DELETE" });
+
+        // Re-upload as v2
+        const formData = new FormData();
+        formData.append("file", blob, fileName);
+        formData.append("item_id", itemId);
+        formData.append("encryption_version", "2");
+        if (purpose) formData.append("purpose", purpose);
+
+        await fetch(`${API_BASE}/files/upload`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: formData,
+        });
+
+        migrated++;
+        onProgress?.(migrated, fileTotal);
+      }
+
+      return migrated;
+    },
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -782,6 +892,13 @@ export interface ItemListResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface MigrationStatus {
+  items_v1: number;
+  items_v2: number;
+  files_v1: number;
+  files_v2: number;
 }
 
 export interface ItemCreate {

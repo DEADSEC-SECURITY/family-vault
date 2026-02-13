@@ -55,9 +55,11 @@ def prelogin(data: PreloginRequest, db: DBSession = Depends(get_db)):
     """
     user = get_user_by_email(db, data.email.lower().strip())
     kdf_iterations = user.kdf_iterations if user else 600000
+    is_zk = bool(user and user.encrypted_private_key)
     return PreloginResponse(
         kdf_iterations=kdf_iterations,
         email=data.email.lower().strip(),
+        is_zero_knowledge=is_zk,
     )
 
 

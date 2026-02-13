@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // Next.js requires unsafe-eval in dev
               "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles
-              `connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`,
+              `connect-src 'self' ${new URL(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").origin}`,
               "img-src 'self' data: blob:",
               "font-src 'self'",
               "object-src 'none'",

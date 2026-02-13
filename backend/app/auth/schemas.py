@@ -30,6 +30,7 @@ class PreloginRequest(BaseModel):
 class PreloginResponse(BaseModel):
     kdf_iterations: int
     email: str
+    is_zero_knowledge: bool = True
 
 
 class UserResponse(BaseModel):

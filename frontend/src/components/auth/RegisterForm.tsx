@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Copy, Check, ShieldCheck } from "lucide-react";
+import RecoveryCodesCard from "./RecoveryCodesCard";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -43,13 +44,16 @@ export function RegisterForm() {
 
   // Recovery key step
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
-  const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Hold registration data for after recovery confirmation
   const [pendingRegData, setPendingRegData] = useState<{
     token: string;
-    user: { id: string; email: string; full_name: string; active_org_id: string | null };
+    user: {
+      id: string;
+      email: string;
+      full_name: string;
+      active_org_id: string | null;
+    };
     orgKey: Uint8Array;
     orgId: string | null;
   } | null>(null);
@@ -143,14 +147,6 @@ export function RegisterForm() {
     }
   }
 
-  function handleCopyRecoveryKey() {
-    if (recoveryKey) {
-      navigator.clipboard.writeText(recoveryKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }
-
   function handleConfirmRecovery() {
     if (!pendingRegData) return;
 
@@ -165,60 +161,10 @@ export function RegisterForm() {
   // Recovery key confirmation screen
   if (recoveryKey) {
     return (
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 p-3 bg-amber-100 rounded-full w-fit">
-            <ShieldCheck className="h-8 w-8 text-amber-600" />
-          </div>
-          <CardTitle className="text-xl font-bold">Save Your Recovery Key</CardTitle>
-          <CardDescription>
-            This is the <strong>only way</strong> to recover your vault if you forget
-            your password. Store it somewhere safe — it will not be shown again.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="relative">
-            <div className="rounded-lg bg-gray-50 border p-4 font-mono text-sm break-all select-all">
-              {recoveryKey}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2"
-              onClick={handleCopyRecoveryKey}
-            >
-              {copied ? (
-                <Check className="h-4 w-4 text-green-600" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-          <div className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              id="recoveryConfirm"
-              checked={recoveryConfirmed}
-              onChange={(e) => setRecoveryConfirmed(e.target.checked)}
-              className="mt-1"
-            />
-            <label htmlFor="recoveryConfirm" className="text-sm text-gray-600">
-              I have saved my recovery key in a secure location. I understand that
-              without it, I cannot recover my vault if I forget my password.
-            </label>
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button
-            className="w-full"
-            disabled={!recoveryConfirmed}
-            onClick={handleConfirmRecovery}
-          >
-            Continue to Vault
-          </Button>
-        </CardFooter>
-      </Card>
+      <RecoveryCodesCard
+        recoveryKey={recoveryKey}
+        confirmRecovery={handleConfirmRecovery}
+      />
     );
   }
 
@@ -269,7 +215,8 @@ export function RegisterForm() {
               minLength={8}
             />
             <p className="text-xs text-gray-500">
-              Your master password is used to encrypt your vault. It is never sent to the server.
+              Your master password is used to encrypt your vault. It is never
+              sent to the server.
             </p>
           </div>
           <div className="space-y-2">

@@ -12,7 +12,7 @@
  */
 
 class KeyStore {
-  private masterKey: CryptoKey | null = null;
+  private masterKey: Uint8Array | null = null;
   private symmetricKey: CryptoKey | null = null;
   private privateKey: CryptoKey | null = null;
   private publicKey: CryptoKey | null = null;
@@ -20,11 +20,11 @@ class KeyStore {
 
   // ── Master Key ───────────────────────────────────────────────
 
-  setMasterKey(key: CryptoKey): void {
+  setMasterKey(key: Uint8Array): void {
     this.masterKey = key;
   }
 
-  getMasterKey(): CryptoKey {
+  getMasterKey(): Uint8Array {
     if (!this.masterKey) {
       throw new Error("Master key not available — user must log in");
     }
@@ -109,6 +109,7 @@ class KeyStore {
    * references lets the GC reclaim them promptly.
    */
   clear(): void {
+    if (this.masterKey) this.masterKey.fill(0);
     this.masterKey = null;
     this.symmetricKey = null;
     this.privateKey = null;

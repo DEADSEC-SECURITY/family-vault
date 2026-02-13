@@ -39,51 +39,59 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      // 1. Pre-login: get KDF iterations for this email
+      // 1. Pre-login: get KDF iterations and ZK status for this email
       const prelogin = await api.auth.prelogin(email);
 
-      // 2. Derive master key from password + email
-      const masterKey = await deriveMasterKey(
-        password,
-        email,
-        prelogin.kdf_iterations,
-      );
-
-      // 3. Compute master password hash
-      const masterPasswordHash = await hashMasterPassword(masterKey, password);
-
-      // 4. Login with master password hash
-      const res = await api.auth.login({
-        email,
-        password: "zero-knowledge",
-        master_password_hash: masterPasswordHash,
-      });
-
-      // 5. Store session
-      setToken(res.token);
-      setStoredUser(res.user);
-      if (res.user.active_org_id) {
-        setActiveOrgId(res.user.active_org_id);
-      }
-
-      // 6. Decrypt keys if zero-knowledge data is present
-      if (res.encrypted_private_key && res.public_key) {
-        const symmetricKey = await deriveSymmetricKey(masterKey);
-        const privateKey = await decryptPrivateKey(
-          res.encrypted_private_key,
-          symmetricKey,
+      let res;
+      if (prelogin.is_zero_knowledge) {
+        // ZK mode: derive master key and send hash
+        const masterKey = await deriveMasterKey(
+          password,
+          email,
+          prelogin.kdf_iterations,
         );
-        const publicKey = await importPublicKey(res.public_key);
+        const masterPasswordHash = await hashMasterPassword(masterKey, password);
 
-        keyStore.setMasterKey(masterKey);
-        keyStore.setSymmetricKey(symmetricKey);
-        keyStore.setPrivateKey(privateKey);
-        keyStore.setPublicKey(publicKey);
+        res = await api.auth.login({
+          email,
+          password: "zero-knowledge",
+          master_password_hash: masterPasswordHash,
+        });
 
-        // 7. Unwrap org key if available
-        if (res.encrypted_org_key && res.user.active_org_id) {
-          const orgKey = await unwrapOrgKey(res.encrypted_org_key, privateKey);
-          keyStore.setOrgKey(res.user.active_org_id, orgKey);
+        // Store session
+        setToken(res.token);
+        setStoredUser(res.user);
+        if (res.user.active_org_id) {
+          setActiveOrgId(res.user.active_org_id);
+        }
+
+        // Decrypt keys if present
+        if (res.encrypted_private_key && res.public_key) {
+          const symmetricKey = await deriveSymmetricKey(masterKey);
+          const privateKey = await decryptPrivateKey(
+            res.encrypted_private_key,
+            symmetricKey,
+          );
+          const publicKey = await importPublicKey(res.public_key);
+
+          keyStore.setMasterKey(masterKey);
+          keyStore.setSymmetricKey(symmetricKey);
+          keyStore.setPrivateKey(privateKey);
+          keyStore.setPublicKey(publicKey);
+
+          if (res.encrypted_org_key && res.user.active_org_id) {
+            const orgKey = await unwrapOrgKey(res.encrypted_org_key, privateKey);
+            keyStore.setOrgKey(res.user.active_org_id, orgKey);
+          }
+        }
+      } else {
+        // Legacy mode: send raw password
+        res = await api.auth.login({ email, password });
+
+        setToken(res.token);
+        setStoredUser(res.user);
+        if (res.user.active_org_id) {
+          setActiveOrgId(res.user.active_org_id);
         }
       }
 

@@ -39,4 +39,5 @@ export interface LoginData {
 export interface PreloginResponse {
   kdf_iterations: number;
   email: string;
+  is_zero_knowledge: boolean;
 }

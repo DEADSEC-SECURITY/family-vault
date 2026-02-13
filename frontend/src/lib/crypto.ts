@@ -83,22 +83,22 @@ async function aesDecrypt(encrypted: ArrayBuffer, key: CryptoKey): Promise<Array
 
 /**
  * Derive the 256-bit Master Key from password + email using PBKDF2.
- * This key never leaves the client.
+ * Returns raw bytes — never leaves the client.
  */
 export async function deriveMasterKey(
   password: string,
   email: string,
   iterations: number = KDF_ITERATIONS,
-): Promise<CryptoKey> {
+): Promise<Uint8Array> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     encode(password),
     "PBKDF2",
     false,
-    ["deriveBits", "deriveKey"],
+    ["deriveBits"],
   );
 
-  return crypto.subtle.deriveKey(
+  const bits = await crypto.subtle.deriveBits(
     {
       name: "PBKDF2",
       salt: encode(email.toLowerCase().trim()),
@@ -106,10 +106,10 @@ export async function deriveMasterKey(
       hash: "SHA-256",
     },
     keyMaterial,
-    { name: "HKDF", length: 256 },
-    true, // extractable — needed for HKDF derivation and recovery key
-    ["deriveBits", "deriveKey"],
+    256,
   );
+
+  return new Uint8Array(bits);
 }
 
 /**
@@ -117,8 +117,16 @@ export async function deriveMasterKey(
  * Used to encrypt/decrypt the user's RSA private key.
  */
 export async function deriveSymmetricKey(
-  masterKey: CryptoKey,
+  masterKeyRaw: Uint8Array,
 ): Promise<CryptoKey> {
+  const hkdfKey = await crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(masterKeyRaw),
+    "HKDF",
+    false,
+    ["deriveKey"],
+  );
+
   return crypto.subtle.deriveKey(
     {
       name: "HKDF",
@@ -126,7 +134,7 @@ export async function deriveSymmetricKey(
       salt: encode("familyvault"),
       info: encode("enc"),
     },
-    masterKey,
+    hkdfKey,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"],
@@ -138,14 +146,12 @@ export async function deriveSymmetricKey(
  * This is what gets sent to the server for authentication (server bcrypt-hashes it).
  */
 export async function hashMasterPassword(
-  masterKey: CryptoKey,
+  masterKeyRaw: Uint8Array,
   password: string,
 ): Promise<string> {
-  const masterKeyRaw = await crypto.subtle.exportKey("raw", masterKey);
-
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    masterKeyRaw,
+    toArrayBuffer(masterKeyRaw),
     "PBKDF2",
     false,
     ["deriveBits"],
@@ -323,9 +329,8 @@ export async function decryptFile(
  * Export the master key as a base64 recovery key string.
  * Shown to the user once at registration.
  */
-export async function exportRecoveryKey(masterKey: CryptoKey): Promise<string> {
-  const raw = await crypto.subtle.exportKey("raw", masterKey);
-  return toBase64(raw);
+export function exportRecoveryKey(masterKeyRaw: Uint8Array): string {
+  return toBase64(toArrayBuffer(masterKeyRaw));
 }
 
 /**
