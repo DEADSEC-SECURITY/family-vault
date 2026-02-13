@@ -12,7 +12,7 @@ from app.config import settings
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
+    """Add security headers to all responses, including Content-Security-Policy."""
 
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
@@ -23,6 +23,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "camera=(), microphone=(), geolocation=()"
         )
         response.headers["X-XSS-Protection"] = "0"
+
+        # Content-Security-Policy: restrict scripts, styles, connections
+        origins = " ".join(settings.CORS_ORIGINS)
+        csp_parts = [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+            f"connect-src 'self' {origins}",
+            "img-src 'self' data: blob:",
+            "font-src 'self'",
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
+
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=63072000; includeSubDomains"
@@ -155,6 +172,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
+    expose_headers=["X-Encryption-Version"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
