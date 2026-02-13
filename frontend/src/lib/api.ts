@@ -24,7 +24,7 @@
  * ENV: NEXT_PUBLIC_API_URL (build-time) — defaults to http://localhost:8000/api
  */
 import { getToken, removeToken } from "./auth";
-import type { AuthResponse, LoginData, RegisterData, User } from "@/types";
+import type { AuthResponse, LoginData, PreloginResponse, RegisterData, User } from "@/types";
 
 /** Backend API base URL. Set via NEXT_PUBLIC_API_URL env var (build-time). */
 const API_BASE =
@@ -73,7 +73,8 @@ async function fetchAPI<T>(
       path.startsWith("/auth/validate-invite") ||
       path.startsWith("/auth/forgot-password") ||
       path.startsWith("/auth/validate-reset") ||
-      path.startsWith("/auth/reset-password");
+      path.startsWith("/auth/reset-password") ||
+      path.startsWith("/auth/prelogin");
     if (res.status === 401 && !isAuthEndpoint) {
       removeToken();
       if (typeof window !== "undefined") {
@@ -93,6 +94,11 @@ async function fetchAPI<T>(
 
 export const api = {
   auth: {
+    prelogin: (email: string) =>
+      fetchAPI<PreloginResponse>("/auth/prelogin", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
     register: (data: RegisterData) =>
       fetchAPI<AuthResponse>("/auth/register", {
         method: "POST",
@@ -108,7 +114,7 @@ export const api = {
     me: () => fetchAPI<User>("/auth/me"),
     validateInvite: (token: string) =>
       fetchAPI<InviteValidation>(`/auth/validate-invite?token=${encodeURIComponent(token)}`),
-    acceptInvite: (data: { token: string; password: string }) =>
+    acceptInvite: (data: Record<string, unknown>) =>
       fetchAPI<AuthResponse>("/auth/accept-invite", {
         method: "POST",
         body: JSON.stringify(data),
@@ -120,16 +126,26 @@ export const api = {
       }),
     validateReset: (token: string) =>
       fetchAPI<{ valid: boolean }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
-    resetPassword: (data: { token: string; password: string }) =>
+    resetPassword: (data: Record<string, unknown>) =>
       fetchAPI<{ message: string }>("/auth/reset-password", {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    changePassword: (data: { current_password: string; new_password: string }) =>
+    changePassword: (data: Record<string, unknown>) =>
       fetchAPI<{ message: string }>("/auth/change-password", {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    // Zero-knowledge key exchange endpoints
+    storeOrgKey: (orgId: string, userId: string, encryptedOrgKey: string) =>
+      fetchAPI<{ message: string }>(`/auth/org/${encodeURIComponent(orgId)}/keys`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, encrypted_org_key: encryptedOrgKey }),
+      }),
+    getMyOrgKey: (orgId: string) =>
+      fetchAPI<{ encrypted_org_key: string }>(`/auth/org/${encodeURIComponent(orgId)}/my-key`),
+    getUserPublicKey: (userId: string) =>
+      fetchAPI<{ public_key: string }>(`/auth/user/${encodeURIComponent(userId)}/public-key`),
   },
   categories: {
     list: () => fetchAPI<CategoryListItem[]>("/categories"),

@@ -16,6 +16,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { removeToken, getStoredUser } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
     } catch {
       // ignore errors on logout
     }
+    keyStore.clear();
     removeToken();
     router.push("/login");
   }
