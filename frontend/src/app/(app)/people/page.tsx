@@ -9,12 +9,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Person } from "@/lib/api";
+import { PersonStatusBadge } from "@/components/people/PersonStatusBadge";
 
 export default function PeoplePage() {
   const router = useRouter();
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchPeople = useCallback(async () => {
     setLoading(true);
@@ -30,6 +32,7 @@ export default function PeoplePage() {
 
   useEffect(() => {
     fetchPeople();
+    api.auth.me().then((me) => setCurrentUserId(me.id)).catch(() => {});
   }, [fetchPeople]);
 
   const filtered = people.filter((p) => {
@@ -106,7 +109,7 @@ export default function PeoplePage() {
                 onClick={() => router.push(`/people/${person.id}`)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/people/${person.id}`); } }}
               >
-                <CardContent className="p-4">
+                <CardContent className="px-4 py-3">
                   {/* 1:1 Photo */}
                   <div className="aspect-square mb-3 rounded-lg overflow-hidden bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center">
                     {person.photo_url ? (
@@ -128,17 +131,18 @@ export default function PeoplePage() {
                   </h3>
 
                   {/* Relation */}
-                  {person.relationship && (
+                  {(person.relationship || (currentUserId && person.user_id === currentUserId)) && (
                     <p className="text-xs text-gray-600 truncate">
-                      {person.relationship}
+                      {currentUserId && person.user_id === currentUserId
+                        ? person.relationship ? `${person.relationship} · Self` : "Self"
+                        : person.relationship}
                     </p>
                   )}
 
-                  {/* Login indicator */}
-                  {person.can_login && (
-                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                      <div className="w-1.5 h-1.5 bg-green-600 rounded-full"></div>
-                      Login Access
+                  {/* Status badge */}
+                  {person.status !== "none" && (
+                    <div className="mt-2">
+                      <PersonStatusBadge status={person.status} size="compact" />
                     </div>
                   )}
                 </CardContent>

@@ -8,7 +8,7 @@ Schemas:
 """
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class PersonCreate(BaseModel):
@@ -57,6 +57,18 @@ class PersonOut(BaseModel):
     def full_name(self) -> str:
         """Return the full name of the person."""
         return f"{self.first_name} {self.last_name}"
+
+    @computed_field
+    @property
+    def status(self) -> str:
+        """Derive login status from can_login + user_id."""
+        if self.can_login and self.user_id:
+            return "active"
+        if self.can_login and not self.user_id:
+            return "invited"
+        if not self.can_login and self.user_id:
+            return "inactive"
+        return "none"
 
 
 class LinkPersonRequest(BaseModel):

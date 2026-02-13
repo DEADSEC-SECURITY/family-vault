@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Popover,
   PopoverContent,
@@ -250,34 +250,41 @@ export default function ContactDetailPage({
             {error}
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Avatar Card */}
-          <Card>
-            <CardContent className="p-6">
-              <div className="aspect-square rounded-lg overflow-hidden bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center mb-4">
-                <span className="text-6xl font-bold text-white">
+
+        <Card>
+          <CardContent className="p-0">
+            {/* Profile Header */}
+            <div className="flex items-center gap-5 p-6">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl font-bold text-white">
                   {getInitials(contact.name)}
                 </span>
               </div>
-              {contact.phone && (
-                <p className="text-sm text-gray-600 text-center">{contact.phone}</p>
-              )}
-              {contact.email && (
-                <p className="text-sm text-gray-600 text-center truncate">{contact.email}</p>
-              )}
-            </CardContent>
-          </Card>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {contact.name}
+                </h2>
+                <div className="flex items-center gap-2 mt-1">
+                  {contact.role && (
+                    <span className="text-sm text-gray-500">{contact.role}</span>
+                  )}
+                  {contact.role && contact.company && (
+                    <span className="text-gray-300">&middot;</span>
+                  )}
+                  {contact.company && (
+                    <span className="text-sm text-gray-500">{contact.company}</span>
+                  )}
+                </div>
+              </div>
+            </div>
 
-          {/* Details Card */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>
-                {editing ? "Edit Information" : "Information"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+            {/* Separator */}
+            <div className="border-t" />
+
+            {/* Details */}
+            <div className="p-6">
               {editing ? (
-                <>
+                <div className="space-y-6">
                   {/* Name & Company */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -451,74 +458,65 @@ export default function ContactDetailPage({
                       Save Changes
                     </Button>
                   </div>
-                </>
+                </div>
               ) : (
-                <>
-                  {/* View mode */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-sm text-gray-600">Company</p>
-                      <p className="text-base text-gray-900">
-                        {contact.company || "\u2014"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Role</p>
-                      <p className="text-base text-gray-900">
-                        {contact.role || "\u2014"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Email</p>
-                      <p className="text-base text-gray-900">
-                        {contact.email || "\u2014"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Phone</p>
-                      <p className="text-base text-gray-900">
-                        {contact.phone || "\u2014"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Website</p>
-                      <p className="text-base text-gray-900">
-                        {contact.website ? (
-                          <a
-                            href={contact.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {contact.website}
-                          </a>
-                        ) : (
-                          "\u2014"
-                        )}
-                      </p>
-                    </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Email</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {contact.email || "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Phone</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {contact.phone || "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Website</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {contact.website ? (
+                        <a
+                          href={contact.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {contact.website}
+                        </a>
+                      ) : (
+                        "\u2014"
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Role</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {contact.role || "\u2014"}
+                    </p>
                   </div>
                   {contact.address && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Address</p>
-                      <p className="text-base text-gray-900 whitespace-pre-wrap">
+                    <div className="col-span-2">
+                      <p className="text-xs font-medium text-gray-500">Address</p>
+                      <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap">
                         {contact.address}
                       </p>
                     </div>
                   )}
                   {contact.notes && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Notes</p>
-                      <p className="text-base text-gray-900 whitespace-pre-wrap">
+                    <div className="col-span-2">
+                      <p className="text-xs font-medium text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap">
                         {contact.notes}
                       </p>
                     </div>
                   )}
-                </>
+                </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

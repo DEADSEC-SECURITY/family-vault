@@ -66,7 +66,14 @@ async function fetchAPI<T>(
     // On 401, redirect to login UNLESS this is already an auth request
     // (login/register return 401 for invalid credentials — we want to show
     // the error, not redirect and lose the message).
-    const isAuthEndpoint = path.startsWith("/auth/login") || path.startsWith("/auth/register");
+    const isAuthEndpoint =
+      path.startsWith("/auth/login") ||
+      path.startsWith("/auth/register") ||
+      path.startsWith("/auth/accept-invite") ||
+      path.startsWith("/auth/validate-invite") ||
+      path.startsWith("/auth/forgot-password") ||
+      path.startsWith("/auth/validate-reset") ||
+      path.startsWith("/auth/reset-password");
     if (res.status === 401 && !isAuthEndpoint) {
       removeToken();
       if (typeof window !== "undefined") {
@@ -99,6 +106,30 @@ export const api = {
     logout: () =>
       fetchAPI<void>("/auth/logout", { method: "POST" }),
     me: () => fetchAPI<User>("/auth/me"),
+    validateInvite: (token: string) =>
+      fetchAPI<InviteValidation>(`/auth/validate-invite?token=${encodeURIComponent(token)}`),
+    acceptInvite: (data: { token: string; password: string }) =>
+      fetchAPI<AuthResponse>("/auth/accept-invite", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    forgotPassword: (email: string) =>
+      fetchAPI<{ message: string }>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+    validateReset: (token: string) =>
+      fetchAPI<{ valid: boolean }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
+    resetPassword: (data: { token: string; password: string }) =>
+      fetchAPI<{ message: string }>("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    changePassword: (data: { current_password: string; new_password: string }) =>
+      fetchAPI<{ message: string }>("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
   categories: {
     list: () => fetchAPI<CategoryListItem[]>("/categories"),
@@ -290,6 +321,10 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchAPI<void>(`/people/${id}`, { method: "DELETE" }),
+    resendInvite: (id: string) =>
+      fetchAPI<{ message: string }>(`/people/${id}/resend-invite`, { method: "POST" }),
+    getInviteLink: (id: string) =>
+      fetchAPI<{ invite_url: string }>(`/people/${id}/invite-link`),
     listForItem: (itemId: string) =>
       fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`),
     link: (itemId: string, personId: string, role?: string | null) =>
@@ -680,6 +715,7 @@ export interface Person {
   notes: string | null;
   can_login: boolean;
   user_id: string | null;
+  status: "none" | "invited" | "active" | "inactive";
   created_at: string;
   updated_at: string;
 }
@@ -802,6 +838,14 @@ export interface LinkedSavedContact {
   phone: string | null;
   website: string | null;
   created_at: string;
+}
+
+// Invitation types
+export interface InviteValidation {
+  valid: boolean;
+  email: string | null;
+  full_name: string | null;
+  org_name: string | null;
 }
 
 export { ApiError };

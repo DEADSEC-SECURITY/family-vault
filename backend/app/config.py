@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
+    # Frontend URL (for invitation and password reset links)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # SMTP (leave SMTP_HOST empty to disable email)
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

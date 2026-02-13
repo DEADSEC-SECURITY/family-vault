@@ -7,16 +7,29 @@ ENDPOINTS:
   POST   /api/people              — create a new person
   PATCH  /api/people/{person_id}  — update person details
   DELETE /api/people/{person_id}  — delete person
+  POST   /api/people/{person_id}/resend-invite — resend invitation email
+  GET    /api/people/{person_id}/invite-link  — get active invitation link
 
 People are org-scoped. They can be referenced throughout the app for beneficiaries,
 insured persons, etc. People can optionally have login access via a linked user account.
+
+When can_login is set to True for a person with an email and no linked user account,
+an invitation email is automatically sent so they can set up a password.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
 
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import get_current_user, verify_item_ownership
+from datetime import datetime, timezone
+
+from app.config import settings
+from app.invitations.models import InvitationToken
+from app.invitations.service import create_invitation, send_invitation_email
+from app.orgs.models import Organization
 from app.orgs.service import get_active_org_id
 from app.people.models import ItemPerson, Person
 from app.people.schemas import (
@@ -27,7 +40,22 @@ from app.people.schemas import (
     PersonUpdate,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/people", tags=["people"])
+
+
+def _maybe_send_invite(db: DBSession, person: Person, org_id: str) -> None:
+    """Send an invitation if person needs one (can_login=True, has email, no user_id)."""
+    if not person.can_login or person.user_id or not person.email:
+        return
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        return
+    token_obj = create_invitation(db, person, org_id)
+    db.commit()
+    send_invitation_email(person, token_obj.token, org.name)
+    logger.info("Invitation sent to %s for org %s", person.email, org.name)
 
 
 @router.get("", response_model=list[PersonOut])
@@ -75,8 +103,18 @@ def create_person(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Create a new person in the user's org."""
+    """Create a new person in the user's org.
+
+    If can_login is True and the person has an email, an invitation email is sent.
+    """
     org_id = get_active_org_id(user, db)
+
+    if data.can_login and not data.email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required to grant login access",
+        )
+
     person = Person(
         org_id=org_id,
         first_name=data.first_name,
@@ -92,6 +130,9 @@ def create_person(
     db.add(person)
     db.commit()
     db.refresh(person)
+
+    _maybe_send_invite(db, person, org_id)
+
     return person
 
 
@@ -102,7 +143,11 @@ def update_person(
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Update a person's details."""
+    """Update a person's details.
+
+    If can_login transitions to True for a person with email and no linked user,
+    an invitation email is sent automatically.
+    """
     org_id = get_active_org_id(user, db)
     person = (
         db.query(Person)
@@ -111,6 +156,8 @@ def update_person(
     )
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
+
+    old_can_login = person.can_login
 
     # Update fields if provided
     if data.first_name is not None:
@@ -130,10 +177,20 @@ def update_person(
     if data.notes is not None:
         person.notes = data.notes
     if data.can_login is not None:
+        if data.can_login and not person.email:
+            raise HTTPException(
+                status_code=400,
+                detail="Email is required to grant login access",
+            )
         person.can_login = data.can_login
 
     db.commit()
     db.refresh(person)
+
+    # Send invite if can_login was just turned on and no user linked
+    if not old_can_login and person.can_login and not person.user_id:
+        _maybe_send_invite(db, person, org_id)
+
     return person
 
 
@@ -155,6 +212,74 @@ def delete_person(
 
     db.delete(person)
     db.commit()
+
+
+# ── Invitation management ───────────────────────────────────────
+
+
+@router.post("/{person_id}/resend-invite")
+def resend_invite(
+    person_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Resend an invitation email for a person with status 'invited'."""
+    org_id = get_active_org_id(user, db)
+    person = (
+        db.query(Person)
+        .filter(Person.id == person_id, Person.org_id == org_id)
+        .first()
+    )
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    if not person.can_login:
+        raise HTTPException(status_code=400, detail="Person does not have login access enabled")
+    if person.user_id:
+        raise HTTPException(status_code=400, detail="Person already has an active account")
+    if not person.email:
+        raise HTTPException(status_code=400, detail="Person has no email address")
+
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    token_obj = create_invitation(db, person, org_id)
+    db.commit()
+    send_invitation_email(person, token_obj.token, org.name)
+
+    return {"message": f"Invitation resent to {person.email}"}
+
+
+@router.get("/{person_id}/invite-link")
+def get_invite_link(
+    person_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Get the active invitation link for a person with status 'invited'."""
+    org_id = get_active_org_id(user, db)
+    person = (
+        db.query(Person)
+        .filter(Person.id == person_id, Person.org_id == org_id)
+        .first()
+    )
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    token_obj = (
+        db.query(InvitationToken)
+        .filter(
+            InvitationToken.person_id == person_id,
+            InvitationToken.purpose == "invite",
+            InvitationToken.used_at.is_(None),
+            InvitationToken.expires_at > datetime.now(timezone.utc),
+        )
+        .order_by(InvitationToken.created_at.desc())
+        .first()
+    )
+    if not token_obj:
+        raise HTTPException(status_code=404, detail="No active invitation found")
+
+    invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token_obj.token}"
+    return {"invite_url": invite_url}
 
 
 # ── Per-item linking ─────────────────────────────────────────────

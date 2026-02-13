@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Check, ChevronsUpDown, Loader2, Pencil, Trash2, User } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowLeft, Check, ChevronsUpDown, Copy, Loader2, Mail, Pencil, Trash2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Person } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { PersonStatusBadge } from "@/components/people/PersonStatusBadge";
 
 const DEFAULT_RELATIONSHIPS = [
   "Spouse",
@@ -69,7 +70,16 @@ export default function PersonDetailPage({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Current user (to prevent self-deletion)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Copy invite link state
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Form state
   const [firstName, setFirstName] = useState("");
@@ -99,6 +109,13 @@ export default function PersonDetailPage({
         if (!mounted) return;
 
         setPerson(data);
+        // Fetch current user to prevent self-deletion
+        try {
+          const me = await api.auth.me();
+          if (mounted) setCurrentUserId(me.id);
+        } catch {
+          // ignore
+        }
         // Initialize form
         setFirstName(data.first_name);
         setLastName(data.last_name);
@@ -108,6 +125,16 @@ export default function PersonDetailPage({
         setRelation(data.relationship || "");
         setNotes(data.notes || "");
         setCanLogin(data.can_login);
+
+        // Fetch invite link for invited persons
+        if (data.status === "invited") {
+          try {
+            const linkData = await api.people.getInviteLink(id);
+            if (mounted) setInviteLink(linkData.invite_url);
+          } catch {
+            // No active invite link — that's fine
+          }
+        }
       } catch (err) {
         console.error("Failed to fetch person:", err);
         router.push("/people");
@@ -125,13 +152,38 @@ export default function PersonDetailPage({
     };
   }, [params, router]);
 
+  const handleCopyInviteLink = async () => {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement("textarea");
+      textarea.value = inviteLink;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   const handleSave = async () => {
     if (!personId || !firstName.trim() || !lastName.trim()) {
       setError("First name and last name are required.");
       return;
     }
 
+    if (canLogin && !email.trim()) {
+      setError("Email is required to grant login access.");
+      return;
+    }
+
     setError(null);
+    setSuccess(null);
     setSaving(true);
     try {
       const updated = await api.people.update(personId, {
@@ -146,11 +198,48 @@ export default function PersonDetailPage({
       });
       setPerson(updated);
       setEditing(false);
+      if (updated.status === "invited" && !person?.can_login && canLogin) {
+        setSuccess(`Invitation sent to ${updated.email}`);
+      }
+      // Refresh invite link if person is now invited
+      if (updated.status === "invited") {
+        try {
+          const linkData = await api.people.getInviteLink(personId);
+          setInviteLink(linkData.invite_url);
+        } catch {
+          setInviteLink(null);
+        }
+      } else {
+        setInviteLink(null);
+      }
     } catch (err) {
       console.error("Failed to update person:", err);
-      setError("Failed to update person. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to update person. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResendInvite = async () => {
+    if (!personId) return;
+    setResending(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await api.people.resendInvite(personId);
+      setSuccess(result.message);
+      // Refresh invite link after resend (new token)
+      try {
+        const linkData = await api.people.getInviteLink(personId);
+        setInviteLink(linkData.invite_url);
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      console.error("Failed to resend invite:", err);
+      setError(err instanceof Error ? err.message : "Failed to resend invitation.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -183,6 +272,8 @@ export default function PersonDetailPage({
     return null;
   }
 
+  const isSelf = !!(currentUserId && person.user_id && currentUserId === person.user_id);
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -206,6 +297,7 @@ export default function PersonDetailPage({
               </h1>
               <p className="text-sm text-gray-600">
                 {person.relationship || "Family member"}
+                {isSelf && " · Self"}
               </p>
             </div>
           </div>
@@ -217,36 +309,38 @@ export default function PersonDetailPage({
                 <Pencil className="h-4 w-4 mr-2" />
                 Edit
               </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Person?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete {person.first_name}{" "}
-                      {person.last_name}? This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      disabled={deleting}
-                      className="bg-red-600 hover:bg-red-700"
-                    >
-                      {deleting && (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      )}
+              {!isSelf && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive">
+                      <Trash2 className="h-4 w-4 mr-2" />
                       Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Person?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete {person.first_name}{" "}
+                        {person.last_name}? This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        {deleting && (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        )}
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </>
           )}
         </div>
@@ -259,42 +353,85 @@ export default function PersonDetailPage({
             {error}
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Photo Card */}
-          <Card>
-            <CardContent className="p-6">
-              <div className="aspect-square rounded-lg overflow-hidden bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center mb-4">
+        {success && (
+          <div className="mb-4 p-3 rounded-md bg-green-50 text-green-700 text-sm">
+            {success}
+          </div>
+        )}
+
+        <Card>
+          <CardContent className="p-0">
+            {/* Profile Header */}
+            <div className="flex items-center gap-5 p-6">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center flex-shrink-0">
                 {person.photo_url ? (
                   <img
                     src={person.photo_url}
                     alt={`${person.first_name} ${person.last_name}`}
-                    className="w-full h-full object-cover"
+                    className="w-20 h-20 rounded-full object-cover"
                   />
                 ) : (
-                  <span className="text-6xl font-bold text-white">
+                  <span className="text-2xl font-bold text-white">
                     {getInitials(person.first_name, person.last_name)}
                   </span>
                 )}
               </div>
-              {person.can_login && (
-                <div className="flex items-center gap-2 justify-center px-3 py-2 bg-green-100 text-green-700 text-sm rounded-md">
-                  <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                  Has Login Access
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {person.first_name} {person.last_name}
+                </h2>
+                <div className="flex items-center gap-2 mt-1">
+                  {person.relationship && (
+                    <span className="text-sm text-gray-500">{person.relationship}</span>
+                  )}
+                  {person.relationship && person.status !== "none" && (
+                    <span className="text-gray-300">&middot;</span>
+                  )}
+                  {person.status !== "none" && (
+                    <PersonStatusBadge status={person.status} />
+                  )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                {person.status === "invited" && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResendInvite}
+                      disabled={resending}
+                    >
+                      {resending ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <Mail className="h-3.5 w-3.5 mr-1.5" />
+                      )}
+                      Resend Invite
+                    </Button>
+                    {inviteLink && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCopyInviteLink}
+                      >
+                        {copied ? (
+                          <Check className="h-3.5 w-3.5 mr-1.5 text-green-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5 mr-1.5" />
+                        )}
+                        {copied ? "Copied!" : "Copy Invite Link"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
-          {/* Details Card */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>
-                {editing ? "Edit Information" : "Information"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+            {/* Separator */}
+            <div className="border-t" />
+
+            {/* Details */}
+            <div className="p-6">
               {editing ? (
-                <>
+                <div className="space-y-6">
                   {/* Name */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -433,17 +570,34 @@ export default function PersonDetailPage({
                   </div>
 
                   {/* Login Access */}
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="canLogin"
-                      checked={canLogin}
-                      onCheckedChange={(checked) =>
-                        setCanLogin(checked === true)
-                      }
-                    />
-                    <Label htmlFor="canLogin" className="cursor-pointer">
-                      Allow this person to login and manage documents
-                    </Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="canLogin"
+                        checked={canLogin}
+                        onCheckedChange={(checked) =>
+                          setCanLogin(checked === true)
+                        }
+                      />
+                      <Label htmlFor="canLogin" className="cursor-pointer">
+                        Allow this person to login and manage documents
+                      </Label>
+                    </div>
+                    {canLogin && !email.trim() && (
+                      <p className="text-sm text-amber-600 ml-6">
+                        Email is required to send an invitation
+                      </p>
+                    )}
+                    {canLogin && email.trim() && !person.can_login && !person.user_id && (
+                      <p className="text-sm text-blue-600 ml-6">
+                        An invitation email will be sent to {email.trim()}
+                      </p>
+                    )}
+                    {!canLogin && person.user_id && (
+                      <p className="text-sm text-amber-600 ml-6">
+                        This will deactivate their login access
+                      </p>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -452,6 +606,8 @@ export default function PersonDetailPage({
                       variant="outline"
                       onClick={() => {
                         setEditing(false);
+                        setError(null);
+                        setSuccess(null);
                         // Reset form
                         setFirstName(person.first_name);
                         setLastName(person.last_name);
@@ -473,49 +629,46 @@ export default function PersonDetailPage({
                       Save Changes
                     </Button>
                   </div>
-                </>
+                </div>
               ) : (
-                <>
-                  {/* View mode */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-sm text-gray-600">Email</p>
-                      <p className="text-base text-gray-900">
-                        {person.email || "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Phone</p>
-                      <p className="text-base text-gray-900">
-                        {person.phone || "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Date of Birth</p>
-                      <p className="text-base text-gray-900">
-                        {person.date_of_birth || "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Relationship</p>
-                      <p className="text-base text-gray-900">
-                        {person.relationship || "—"}
-                      </p>
-                    </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Email</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {person.email || "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Phone</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {person.phone || "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Date of Birth</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {person.date_of_birth || "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Relationship</p>
+                    <p className="text-sm text-gray-900 mt-0.5">
+                      {person.relationship || "\u2014"}
+                    </p>
                   </div>
                   {person.notes && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Notes</p>
-                      <p className="text-base text-gray-900 whitespace-pre-wrap">
+                    <div className="col-span-2">
+                      <p className="text-xs font-medium text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap">
                         {person.notes}
                       </p>
                     </div>
                   )}
-                </>
+                </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

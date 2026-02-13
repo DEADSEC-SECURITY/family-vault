@@ -27,3 +27,33 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     token: str
     user: UserResponse
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class InviteValidation(BaseModel):
+    valid: bool
+    email: str | None = None
+    full_name: str | None = None
+    org_name: str | None = None
+
+
+class ResetValidation(BaseModel):
+    valid: bool

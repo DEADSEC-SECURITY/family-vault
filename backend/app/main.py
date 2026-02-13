@@ -132,6 +132,7 @@ async def lifespan(app: FastAPI):
     from app.people.models import Person, ItemPerson  # noqa: F401
     from app.item_links.models import ItemLink  # noqa: F401
     from app.saved_contacts.models import SavedContact, ItemSavedContact  # noqa: F401
+    from app.invitations.models import InvitationToken  # noqa: F401
 
     # Start background scheduler
     scheduler = _start_scheduler()
