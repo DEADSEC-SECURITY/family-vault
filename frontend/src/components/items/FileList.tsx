@@ -32,9 +32,9 @@ export function FileList({ files, onDeleted }: FileListProps) {
     }
   }
 
-  async function handleDownload(fileId: string, fileName: string) {
+  async function handleDownload(fileId: string, fileName: string, encryptionVersion?: number) {
     try {
-      const blobUrl = await api.files.getBlobUrl(fileId);
+      const blobUrl = await api.files.getBlobUrl(fileId, encryptionVersion);
       const a = document.createElement("a");
       a.href = blobUrl;
       a.download = fileName;
@@ -74,7 +74,7 @@ export function FileList({ files, onDeleted }: FileListProps) {
               variant="ghost"
               size="sm"
               aria-label={`Download ${file.file_name}`}
-              onClick={() => handleDownload(file.id, file.file_name)}
+              onClick={() => handleDownload(file.id, file.file_name, file.encryption_version)}
             >
               <Download className="h-4 w-4" />
             </Button>

@@ -23,8 +23,10 @@
  *
  * ENV: NEXT_PUBLIC_API_URL (build-time) — defaults to http://localhost:8000/api
  */
-import { getToken, removeToken } from "./auth";
-import type { AuthResponse, LoginData, RegisterData, User } from "@/types";
+import { getToken, getActiveOrgId, removeToken } from "./auth";
+import { keyStore } from "./key-store";
+import { encryptString, decryptString, encryptFile, decryptFile } from "./crypto";
+import type { AuthResponse, LoginData, PreloginResponse, RegisterData, User } from "@/types";
 
 /** Backend API base URL. Set via NEXT_PUBLIC_API_URL env var (build-time). */
 const API_BASE =
@@ -73,7 +75,8 @@ async function fetchAPI<T>(
       path.startsWith("/auth/validate-invite") ||
       path.startsWith("/auth/forgot-password") ||
       path.startsWith("/auth/validate-reset") ||
-      path.startsWith("/auth/reset-password");
+      path.startsWith("/auth/reset-password") ||
+      path.startsWith("/auth/prelogin");
     if (res.status === 401 && !isAuthEndpoint) {
       removeToken();
       if (typeof window !== "undefined") {
@@ -91,8 +94,195 @@ async function fetchAPI<T>(
   return res.json();
 }
 
+// ── Zero-knowledge encryption helpers ─────────────────────────────
+
+/** Get the org key if the user has ZK keys initialized. */
+function getOrgKeyIfAvailable(): Uint8Array | null {
+  const orgId = getActiveOrgId();
+  if (!orgId || !keyStore.isInitialized) return null;
+  try {
+    return keyStore.getOrgKey(orgId);
+  } catch {
+    return null;
+  }
+}
+
+/** Encrypt item fields + notes before sending to server. Returns modified payload. */
+async function encryptItemPayload<T extends { name?: string | null; notes?: string | null; fields?: { field_key: string; field_value: string | null }[]; encryption_version?: number }>(
+  data: T,
+): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const encrypted: Record<string, unknown> = { ...data, encryption_version: 2 };
+
+  // Encrypt notes
+  if (data.notes) {
+    encrypted.notes = await encryptString(data.notes, orgKey);
+  }
+
+  // Encrypt field values
+  if (data.fields) {
+    encrypted.fields = await Promise.all(
+      data.fields.map(async (f) => ({
+        field_key: f.field_key,
+        field_value: f.field_value ? await encryptString(f.field_value, orgKey) : null,
+      })),
+    );
+  }
+
+  return encrypted as T;
+}
+
+/** Decrypt item response (fields + notes) if client-side encrypted. */
+async function decryptItemResponse(item: Item): Promise<Item> {
+  if (item.encryption_version !== 2) return item;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return item;
+
+  const decrypted: Item = { ...item };
+
+  // Decrypt notes
+  if (item.notes) {
+    try {
+      decrypted.notes = await decryptString(item.notes, orgKey);
+    } catch {
+      // Leave as-is if decryption fails
+    }
+  }
+
+  // Decrypt field values
+  decrypted.fields = await Promise.all(
+    item.fields.map(async (f) => {
+      if (!f.field_value) return f;
+      try {
+        return { ...f, field_value: await decryptString(f.field_value, orgKey) };
+      } catch {
+        return f;
+      }
+    }),
+  );
+
+  return decrypted;
+}
+
+/** Decrypt a list of items. */
+async function decryptItemList(items: Item[]): Promise<Item[]> {
+  return Promise.all(items.map(decryptItemResponse));
+}
+
+// ── People / contacts / saved-contacts encryption helpers ────────
+
+/** Encrypt sensitive person fields (phone, notes) before sending. */
+async function encryptPersonPayload<T extends { phone?: string | null; notes?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  if (data.phone) out.phone = await encryptString(data.phone, orgKey);
+  if (data.notes) out.notes = await encryptString(data.notes, orgKey);
+  return out as T;
+}
+
+/** Decrypt sensitive person fields. */
+async function decryptPersonFields<T extends { encryption_version?: number; phone?: string | null; notes?: string | null }>(person: T): Promise<T> {
+  if (person.encryption_version !== 2) return person;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return person;
+
+  const out = { ...person };
+  if (person.phone) try { out.phone = await decryptString(person.phone, orgKey); } catch { /* leave as-is */ }
+  if (person.notes) try { out.notes = await decryptString(person.notes, orgKey); } catch { /* leave as-is */ }
+  return out;
+}
+
+/** Encrypt sensitive item-contact fields (value, address_*) before sending. */
+async function encryptContactPayload<T extends { value?: string; address_line1?: string | null; address_line2?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  const rec = data as Record<string, unknown>;
+  for (const key of ["value", "address_line1", "address_line2", "address_city", "address_state", "address_zip"]) {
+    const val = rec[key];
+    if (val && typeof val === "string") out[key] = await encryptString(val, orgKey);
+  }
+  return out as T;
+}
+
+/** Decrypt sensitive item-contact fields. */
+async function decryptContactFields<T extends { encryption_version?: number; value?: string; address_line1?: string | null; address_line2?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null }>(contact: T): Promise<T> {
+  if (contact.encryption_version !== 2) return contact;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return contact;
+
+  const out = { ...contact };
+  if (contact.value) try { out.value = await decryptString(contact.value, orgKey); } catch { /* leave */ }
+  for (const key of ["address_line1", "address_line2", "address_city", "address_state", "address_zip"] as const) {
+    const val = contact[key];
+    if (val) try { (out as Record<string, unknown>)[key] = await decryptString(val, orgKey); } catch { /* leave */ }
+  }
+  return out;
+}
+
+/** Encrypt sensitive saved-contact fields (email, phone, address, notes). */
+async function encryptSavedContactPayload<T extends { email?: string | null; phone?: string | null; address?: string | null; notes?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  const rec = data as Record<string, unknown>;
+  for (const key of ["email", "phone", "address", "notes"]) {
+    const val = rec[key];
+    if (val && typeof val === "string") out[key] = await encryptString(val, orgKey);
+  }
+  return out as T;
+}
+
+/** Decrypt sensitive saved-contact fields. */
+async function decryptSavedContactFields<T extends { encryption_version?: number; email?: string | null; phone?: string | null; address?: string | null; notes?: string | null }>(contact: T): Promise<T> {
+  if (contact.encryption_version !== 2) return contact;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return contact;
+
+  const out = { ...contact };
+  for (const key of ["email", "phone", "address", "notes"] as const) {
+    const val = contact[key];
+    if (val) try { (out as Record<string, unknown>)[key] = await decryptString(val, orgKey); } catch { /* leave */ }
+  }
+  return out;
+}
+
+/**
+ * Lazy migration: re-encrypt a v1 (server-side) item as v2 (client-side).
+ * The item is already plaintext (server decrypted it). We encrypt and save in the background.
+ */
+async function maybeMigrateItem(item: Item): Promise<void> {
+  if (item.encryption_version === 2) return;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return;
+
+  const payload = await encryptItemPayload({
+    notes: item.notes,
+    fields: item.fields.map((f) => ({ field_key: f.field_key, field_value: f.field_value })),
+  });
+
+  // Fire-and-forget: silently upgrade encryption in the background
+  fetchAPI(`/items/${item.id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    // Ignore migration failures — will retry next access
+  });
+}
+
 export const api = {
   auth: {
+    prelogin: (email: string) =>
+      fetchAPI<PreloginResponse>("/auth/prelogin", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
     register: (data: RegisterData) =>
       fetchAPI<AuthResponse>("/auth/register", {
         method: "POST",
@@ -108,7 +298,7 @@ export const api = {
     me: () => fetchAPI<User>("/auth/me"),
     validateInvite: (token: string) =>
       fetchAPI<InviteValidation>(`/auth/validate-invite?token=${encodeURIComponent(token)}`),
-    acceptInvite: (data: { token: string; password: string }) =>
+    acceptInvite: (data: Record<string, unknown>) =>
       fetchAPI<AuthResponse>("/auth/accept-invite", {
         method: "POST",
         body: JSON.stringify(data),
@@ -119,48 +309,89 @@ export const api = {
         body: JSON.stringify({ email }),
       }),
     validateReset: (token: string) =>
-      fetchAPI<{ valid: boolean }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
-    resetPassword: (data: { token: string; password: string }) =>
+      fetchAPI<{ valid: boolean; email?: string | null; recovery_encrypted_private_key?: string | null }>(`/auth/validate-reset?token=${encodeURIComponent(token)}`),
+    resetPassword: (data: Record<string, unknown>) =>
       fetchAPI<{ message: string }>("/auth/reset-password", {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    changePassword: (data: { current_password: string; new_password: string }) =>
+    changePassword: (data: Record<string, unknown>) =>
       fetchAPI<{ message: string }>("/auth/change-password", {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    // Zero-knowledge key exchange endpoints
+    storeOrgKey: (orgId: string, userId: string, encryptedOrgKey: string) =>
+      fetchAPI<{ message: string }>(`/auth/org/${encodeURIComponent(orgId)}/keys`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, encrypted_org_key: encryptedOrgKey }),
+      }),
+    getMyOrgKey: (orgId: string) =>
+      fetchAPI<{ encrypted_org_key: string }>(`/auth/org/${encodeURIComponent(orgId)}/my-key`),
+    getUserPublicKey: (userId: string) =>
+      fetchAPI<{ public_key: string }>(`/auth/user/${encodeURIComponent(userId)}/public-key`),
+    getPendingKeys: (orgId: string) =>
+      fetchAPI<PendingKeyMember[]>(`/auth/org/${encodeURIComponent(orgId)}/pending-keys`),
   },
   categories: {
     list: () => fetchAPI<CategoryListItem[]>("/categories"),
     get: (slug: string) => fetchAPI<CategoryDetail>(`/categories/${slug}`),
   },
   items: {
-    list: (params: { category?: string; subcategory?: string; page?: number; limit?: number; include_archived?: boolean }) => {
+    list: async (params: { category?: string; subcategory?: string; page?: number; limit?: number; include_archived?: boolean }) => {
       const qs = new URLSearchParams();
       if (params.category) qs.set("category", params.category);
       if (params.subcategory) qs.set("subcategory", params.subcategory);
       if (params.page) qs.set("page", String(params.page));
       if (params.limit) qs.set("limit", String(params.limit));
       if (params.include_archived) qs.set("include_archived", "true");
-      return fetchAPI<ItemListResponse>(`/items?${qs.toString()}`);
+      const res = await fetchAPI<ItemListResponse>(`/items?${qs.toString()}`);
+      res.items = await decryptItemList(res.items);
+      return res;
     },
-    get: (id: string) => fetchAPI<Item>(`/items/${id}`),
-    create: (data: ItemCreate) =>
-      fetchAPI<Item>("/items", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: ItemUpdate) =>
-      fetchAPI<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    get: async (id: string) => {
+      const item = await fetchAPI<Item>(`/items/${id}`);
+      const decrypted = await decryptItemResponse(item);
+      // Lazy migration: re-encrypt v1 items as v2 in the background
+      maybeMigrateItem(decrypted);
+      return decrypted;
+    },
+    create: async (data: ItemCreate) => {
+      const encrypted = await encryptItemPayload(data);
+      const item = await fetchAPI<Item>("/items", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptItemResponse(item);
+    },
+    update: async (id: string, data: ItemUpdate) => {
+      const encrypted = await encryptItemPayload(data);
+      const item = await fetchAPI<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptItemResponse(item);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/items/${id}`, { method: "DELETE" }),
-    renew: (id: string) =>
-      fetchAPI<Item>(`/items/${id}/renew`, { method: "POST" }),
+    renew: async (id: string) => {
+      const item = await fetchAPI<Item>(`/items/${id}/renew`, { method: "POST" });
+      return decryptItemResponse(item);
+    },
   },
   files: {
-    upload: (itemId: string, file: File, purpose?: string) => {
+    upload: async (itemId: string, file: File, purpose?: string) => {
+      const orgKey = getOrgKeyIfAvailable();
       const formData = new FormData();
-      formData.append("file", file);
+
+      if (orgKey) {
+        // Client-side encryption: encrypt file before upload
+        const plainBytes = await file.arrayBuffer();
+        const encryptedBytes = await encryptFile(plainBytes, orgKey);
+        const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+        formData.append("file", encryptedBlob, file.name);
+        formData.append("encryption_version", "2");
+      } else {
+        formData.append("file", file);
+      }
+
       formData.append("item_id", itemId);
       if (purpose) formData.append("purpose", purpose);
+
       return fetchAPI<FileResponse>("/files/upload", {
         method: "POST",
         body: formData,
@@ -168,12 +399,26 @@ export const api = {
       });
     },
     getUrl: (id: string) => `${API_BASE}/files/${id}`,
-    getBlobUrl: async (id: string): Promise<string> => {
+    getBlobUrl: async (id: string, encryptionVersion?: number): Promise<string> => {
       const token = getToken();
       const res = await fetch(`${API_BASE}/files/${id}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`);
+
+      const serverVersion = res.headers.get("X-Encryption-Version");
+      const isClientEncrypted = encryptionVersion === 2 || serverVersion === "2";
+
+      if (isClientEncrypted) {
+        const orgKey = getOrgKeyIfAvailable();
+        if (orgKey) {
+          const encryptedBuf = await res.arrayBuffer();
+          const plainBuf = await decryptFile(encryptedBuf, orgKey);
+          const blob = new Blob([plainBuf]);
+          return URL.createObjectURL(blob);
+        }
+      }
+
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
@@ -204,8 +449,28 @@ export const api = {
       ),
   },
   search: {
-    query: (q: string) =>
-      fetchAPI<ItemListResponse>(`/search?q=${encodeURIComponent(q)}`),
+    query: async (q: string) => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (orgKey) {
+        // ZK mode: fetch all items, decrypt, and search client-side.
+        // Server can't search encrypted v2 data. Family-scale (<500 items) makes this practical.
+        const all = await fetchAPI<ItemListResponse>("/items?limit=500");
+        const decrypted = await decryptItemList(all.items);
+        const lower = q.toLowerCase();
+        const filtered = decrypted.filter((item) => {
+          if (item.name.toLowerCase().includes(lower)) return true;
+          if (item.notes?.toLowerCase().includes(lower)) return true;
+          return item.fields.some(
+            (f) => f.field_value?.toLowerCase().includes(lower),
+          );
+        });
+        return { items: filtered, total: filtered.length, page: 1, limit: 500 };
+      }
+      // Legacy mode: use server-side search
+      const res = await fetchAPI<ItemListResponse>(`/search?q=${encodeURIComponent(q)}`);
+      res.items = await decryptItemList(res.items);
+      return res;
+    },
   },
   providers: {
     insurance: (q?: string) =>
@@ -218,23 +483,25 @@ export const api = {
       ),
   },
   contacts: {
-    listForItem: (itemId: string) =>
-      fetchAPI<ItemContact[]>(`/contacts?item_id=${encodeURIComponent(itemId)}`),
-    create: (data: ItemContactCreate) =>
-      fetchAPI<ItemContact>("/contacts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: {
+    listForItem: async (itemId: string) => {
+      const contacts = await fetchAPI<ItemContact[]>(`/contacts?item_id=${encodeURIComponent(itemId)}`);
+      return Promise.all(contacts.map(decryptContactFields));
+    },
+    create: async (data: ItemContactCreate) => {
+      const encrypted = await encryptContactPayload(data);
+      const contact = await fetchAPI<ItemContact>("/contacts", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptContactFields(contact);
+    },
+    update: async (id: string, data: {
       label?: string; value?: string; contact_type?: string;
       address_line1?: string | null; address_line2?: string | null;
       address_city?: string | null; address_state?: string | null;
-      address_zip?: string | null;
-    }) =>
-      fetchAPI<ItemContact>(`/contacts/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      address_zip?: string | null; encryption_version?: number;
+    }) => {
+      const encrypted = await encryptContactPayload(data);
+      const contact = await fetchAPI<ItemContact>(`/contacts/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptContactFields(contact);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/contacts/${id}`, { method: "DELETE" }),
     reorder: (data: { item_id: string; contacts: { id: string; sort_order: number }[] }) =>
@@ -307,31 +574,41 @@ export const api = {
       ),
   },
   people: {
-    list: () => fetchAPI<Person[]>("/people"),
-    get: (id: string) => fetchAPI<Person>(`/people/${id}`),
-    create: (data: PersonCreate) =>
-      fetchAPI<Person>("/people", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: PersonUpdate) =>
-      fetchAPI<Person>(`/people/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+    list: async () => {
+      const people = await fetchAPI<Person[]>("/people");
+      return Promise.all(people.map(decryptPersonFields));
+    },
+    get: async (id: string) => {
+      const person = await fetchAPI<Person>(`/people/${id}`);
+      return decryptPersonFields(person);
+    },
+    create: async (data: PersonCreate) => {
+      const encrypted = await encryptPersonPayload(data);
+      const person = await fetchAPI<Person>("/people", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptPersonFields(person);
+    },
+    update: async (id: string, data: PersonUpdate) => {
+      const encrypted = await encryptPersonPayload(data);
+      const person = await fetchAPI<Person>(`/people/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptPersonFields(person);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/people/${id}`, { method: "DELETE" }),
     resendInvite: (id: string) =>
       fetchAPI<{ message: string }>(`/people/${id}/resend-invite`, { method: "POST" }),
     getInviteLink: (id: string) =>
       fetchAPI<{ invite_url: string }>(`/people/${id}/invite-link`),
-    listForItem: (itemId: string) =>
-      fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`),
-    link: (itemId: string, personId: string, role?: string | null) =>
-      fetchAPI<LinkedPerson>(
+    listForItem: async (itemId: string) => {
+      const links = await fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`);
+      return Promise.all(links.map(decryptPersonFields));
+    },
+    link: async (itemId: string, personId: string, role?: string | null) => {
+      const link = await fetchAPI<LinkedPerson>(
         `/people/item/${encodeURIComponent(itemId)}`,
         { method: "POST", body: JSON.stringify({ person_id: personId, role: role || null }) },
-      ),
+      );
+      return decryptPersonFields(link);
+    },
     unlink: (itemId: string, linkId: string) =>
       fetchAPI<void>(
         `/people/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
@@ -375,32 +652,160 @@ export const api = {
   },
 
   savedContacts: {
-    list: () => fetchAPI<SavedContact[]>("/saved-contacts"),
-    get: (id: string) => fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`),
-    create: (data: SavedContactCreate) =>
-      fetchAPI<SavedContact>("/saved-contacts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: SavedContactUpdate) =>
-      fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+    list: async () => {
+      const contacts = await fetchAPI<SavedContact[]>("/saved-contacts");
+      return Promise.all(contacts.map(decryptSavedContactFields));
+    },
+    get: async (id: string) => {
+      const contact = await fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`);
+      return decryptSavedContactFields(contact);
+    },
+    create: async (data: SavedContactCreate) => {
+      const encrypted = await encryptSavedContactPayload(data);
+      const contact = await fetchAPI<SavedContact>("/saved-contacts", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptSavedContactFields(contact);
+    },
+    update: async (id: string, data: SavedContactUpdate) => {
+      const encrypted = await encryptSavedContactPayload(data);
+      const contact = await fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptSavedContactFields(contact);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/saved-contacts/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    listForItem: (itemId: string) =>
-      fetchAPI<LinkedSavedContact[]>(`/saved-contacts/item/${encodeURIComponent(itemId)}`),
-    link: (itemId: string, savedContactId: string) =>
-      fetchAPI<LinkedSavedContact>(
+    listForItem: async (itemId: string) => {
+      const contacts = await fetchAPI<LinkedSavedContact[]>(`/saved-contacts/item/${encodeURIComponent(itemId)}`);
+      return Promise.all(contacts.map(decryptSavedContactFields));
+    },
+    link: async (itemId: string, savedContactId: string) => {
+      const link = await fetchAPI<LinkedSavedContact>(
         `/saved-contacts/item/${encodeURIComponent(itemId)}`,
         { method: "POST", body: JSON.stringify({ saved_contact_id: savedContactId }) },
-      ),
+      );
+      return decryptSavedContactFields(link);
+    },
     unlink: (itemId: string, linkId: string) =>
       fetchAPI<void>(
         `/saved-contacts/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
         { method: "DELETE" },
       ),
+  },
+
+  migration: {
+    pending: async () => await fetchAPI<MigrationStatus>("/items/migration/status"),
+
+    status: async (): Promise<boolean> => {
+      const status = await api.migration.pending();
+      if (status.items_v1 > 0 || status.files_v1 > 0) {
+        return false;
+      } else {
+        return true;
+        }
+    },
+
+    /**
+     * Bulk-migrate all v1 items to v2 client-side encryption.
+     * Fetches each v1 item (server decrypts it), re-encrypts client-side, saves as v2.
+     * Returns the number of items migrated.
+     */
+    migrateItems: async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (!orgKey) throw new Error("No org key available — log in first");
+
+      // Fetch all items (including v1) in pages
+      let migrated = 0;
+      let page = 1;
+      const limit = 50;
+      let total = 0;
+
+      do {
+        const res = await fetchAPI<ItemListResponse>(`/items?page=${page}&limit=${limit}`);
+        if (page === 1) total = res.total;
+        const v1Items = res.items.filter((i) => i.encryption_version !== 2);
+
+        for (const item of v1Items) {
+          // Item fields are already decrypted by server (v1)
+          const payload = await encryptItemPayload({
+            notes: item.notes,
+            fields: item.fields.map((f) => ({ field_key: f.field_key, field_value: f.field_value })),
+          });
+          await fetchAPI(`/items/${item.id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          migrated++;
+          onProgress?.(migrated, total);
+        }
+        page++;
+      } while (page * limit <= total + limit);
+
+      return migrated;
+    },
+
+    /**
+     * Bulk-migrate all v1 files to v2 client-side encryption.
+     * Downloads each v1 file (server decrypts it), re-encrypts client-side, re-uploads as v2.
+     * Returns the number of files migrated.
+     */
+    migrateFiles: async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (!orgKey) throw new Error("No org key available — log in first");
+
+      // Fetch all items to find v1 files
+      let migrated = 0;
+      let page = 1;
+      const limit = 50;
+      let total = 0;
+      const v1Files: Array<{ fileId: string; itemId: string; fileName: string; purpose: string | null }> = [];
+
+      do {
+        const res = await fetchAPI<ItemListResponse>(`/items?page=${page}&limit=${limit}`);
+        if (page === 1) total = res.total;
+        for (const item of res.items) {
+          for (const file of item.files) {
+            if (file.encryption_version !== 2) {
+              v1Files.push({ fileId: file.id, itemId: item.id, fileName: file.file_name, purpose: file.purpose });
+            }
+          }
+        }
+        page++;
+      } while (page * limit <= total + limit);
+
+      const fileTotal = v1Files.length;
+
+      for (const { fileId, itemId, fileName, purpose } of v1Files) {
+        // Download (server decrypts v1)
+        const res = await fetch(`${API_BASE}/files/${fileId}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) continue;
+        const plainBytes = await res.arrayBuffer();
+
+        // Encrypt client-side
+        const encryptedBytes = await encryptFile(plainBytes, orgKey);
+        const blob = new Blob([encryptedBytes]);
+
+        // Delete old file
+        await fetchAPI<void>(`/files/${fileId}`, { method: "DELETE" });
+
+        // Re-upload as v2
+        const formData = new FormData();
+        formData.append("file", blob, fileName);
+        formData.append("item_id", itemId);
+        formData.append("encryption_version", "2");
+        if (purpose) formData.append("purpose", purpose);
+
+        await fetch(`${API_BASE}/files/upload`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: formData,
+        });
+
+        migrated++;
+        onProgress?.(migrated, fileTotal);
+      }
+
+      return migrated;
+    },
   },
 };
 
@@ -471,6 +876,7 @@ export interface FileAttachmentType {
   file_size: number;
   mime_type: string;
   purpose: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -482,6 +888,7 @@ export interface Item {
   name: string;
   notes: string | null;
   is_archived: boolean;
+  encryption_version?: number;
   fields: FieldValue[];
   files: FileAttachmentType[];
   created_at: string;
@@ -495,18 +902,27 @@ export interface ItemListResponse {
   limit: number;
 }
 
+export interface MigrationStatus {
+  items_v1: number;
+  items_v2: number;
+  files_v1: number;
+  files_v2: number;
+}
+
 export interface ItemCreate {
   category: string;
   subcategory: string;
   name: string;
   notes?: string | null;
   fields: { field_key: string; field_value: string | null }[];
+  encryption_version?: number;
 }
 
 export interface ItemUpdate {
   name?: string | null;
   notes?: string | null;
   fields?: { field_key: string; field_value: string | null }[];
+  encryption_version?: number;
 }
 
 export interface FileResponse {
@@ -515,6 +931,7 @@ export interface FileResponse {
   file_size: number;
   mime_type: string;
   purpose: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -571,6 +988,7 @@ export interface ItemContact {
   value: string;
   contact_type: string;
   sort_order: number;
+  encryption_version?: number;
   address_line1?: string | null;
   address_line2?: string | null;
   address_city?: string | null;
@@ -585,6 +1003,7 @@ export interface ItemContactCreate {
   value?: string;
   contact_type?: string;
   sort_order?: number;
+  encryption_version?: number;
   address_line1?: string | null;
   address_line2?: string | null;
   address_city?: string | null;
@@ -715,6 +1134,7 @@ export interface Person {
   notes: string | null;
   can_login: boolean;
   user_id: string | null;
+  encryption_version?: number;
   status: "none" | "invited" | "active" | "inactive";
   created_at: string;
   updated_at: string;
@@ -730,6 +1150,7 @@ export interface PersonCreate {
   relationship?: string | null;
   notes?: string | null;
   can_login?: boolean;
+  encryption_version?: number;
 }
 
 export interface PersonUpdate {
@@ -742,6 +1163,7 @@ export interface PersonUpdate {
   relationship?: string | null;
   notes?: string | null;
   can_login?: boolean | null;
+  encryption_version?: number;
 }
 
 export interface LinkedPerson {
@@ -754,6 +1176,7 @@ export interface LinkedPerson {
   email: string | null;
   phone: string | null;
   relationship: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -801,6 +1224,7 @@ export interface SavedContact {
   website: string | null;
   address: string | null;
   notes: string | null;
+  encryption_version?: number;
   created_at: string;
   updated_at: string;
 }
@@ -814,6 +1238,7 @@ export interface SavedContactCreate {
   website?: string | null;
   address?: string | null;
   notes?: string | null;
+  encryption_version?: number;
 }
 
 export interface SavedContactUpdate {
@@ -825,6 +1250,7 @@ export interface SavedContactUpdate {
   website?: string | null;
   address?: string | null;
   notes?: string | null;
+  encryption_version?: number;
 }
 
 export interface LinkedSavedContact {
@@ -837,6 +1263,7 @@ export interface LinkedSavedContact {
   email: string | null;
   phone: string | null;
   website: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -846,6 +1273,13 @@ export interface InviteValidation {
   email: string | null;
   full_name: string | null;
   org_name: string | null;
+}
+
+export interface PendingKeyMember {
+  user_id: string;
+  email: string;
+  full_name: string;
+  public_key: string;
 }
 
 export { ApiError };

@@ -186,6 +186,7 @@ export function InlineFileZone({
             className="relative max-w-3xl max-h-[85vh] m-4"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={lightboxUrl}
               alt={lightboxLabel}
@@ -262,6 +263,7 @@ function FileSlotDisplay({
           style={containerStyle}
           onClick={() => onEnlarge(blobUrl, { id: file.id, name: file.file_name, purpose: slot })}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={blobUrl}
             alt={slotLabel(slot)}

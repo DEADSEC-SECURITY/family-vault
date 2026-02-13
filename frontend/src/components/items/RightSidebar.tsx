@@ -219,6 +219,11 @@ interface RightSidebarProps {
   categorySlug?: string;
 }
 
+const BUSINESS_ENTITY_SUBS = new Set(["llc", "corporation", "partnership", "sole_proprietorship"]);
+const BUSINESS_SUB_LABELS: Record<string, string> = {
+  llc: "LLC", corporation: "Corporation", partnership: "Partnership/LLP", sole_proprietorship: "Sole Proprietorship",
+};
+
 export const RightSidebar = React.forwardRef<RightSidebarHandle, RightSidebarProps>(
   function RightSidebar({ itemId, isCreate, subcategoryKey, isArchived, categorySlug }, ref) {
     const router = useRouter();
@@ -326,11 +331,6 @@ export const RightSidebar = React.forwardRef<RightSidebarHandle, RightSidebarPro
         setLoadingLinkedPeople(false);
       }
     }, [itemId]);
-
-    const BUSINESS_ENTITY_SUBS = new Set(["llc", "corporation", "partnership", "sole_proprietorship"]);
-    const BUSINESS_SUB_LABELS: Record<string, string> = {
-      llc: "LLC", corporation: "Corporation", partnership: "Partnership/LLP", sole_proprietorship: "Sole Proprietorship",
-    };
 
     const fetchLinkedBusiness = useCallback(async () => {
       if (!itemId) return;

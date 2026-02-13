@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.files.models import FileAttachment
+from app.items.models import Item
 from app.items.schemas import ItemCreate, ItemListResponse, ItemResponse, ItemUpdate
 from app.items.service import create_item, delete_item, get_item, list_items, renew_item, update_item
 from app.orgs.service import get_active_org_id
@@ -26,6 +29,42 @@ def list_items_endpoint(
     return ItemListResponse(items=items, total=total, page=page, limit=limit)
 
 
+@router.get("/migration/status")
+def migration_status(
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Return counts of v1 vs v2 items and files for the current org."""
+    org_id = get_active_org_id(user, db)
+
+    items_v1 = db.query(func.count(Item.id)).filter(
+        Item.org_id == org_id, Item.is_archived == False, Item.encryption_version != 2
+    ).scalar() or 0
+    items_v2 = db.query(func.count(Item.id)).filter(
+        Item.org_id == org_id, Item.is_archived == False, Item.encryption_version == 2
+    ).scalar() or 0
+
+    files_v1 = (
+        db.query(func.count(FileAttachment.id))
+        .join(Item)
+        .filter(Item.org_id == org_id, FileAttachment.encryption_version != 2)
+        .scalar() or 0
+    )
+    files_v2 = (
+        db.query(func.count(FileAttachment.id))
+        .join(Item)
+        .filter(Item.org_id == org_id, FileAttachment.encryption_version == 2)
+        .scalar() or 0
+    )
+
+    return {
+        "items_v1": items_v1,
+        "items_v2": items_v2,
+        "files_v1": files_v1,
+        "files_v2": files_v2,
+    }
+
+
 @router.post("", response_model=ItemResponse, status_code=201)
 def create_item_endpoint(
     data: ItemCreate,
@@ -42,6 +81,7 @@ def create_item_endpoint(
         name=data.name,
         notes=data.notes,
         fields=data.fields,
+        encryption_version=data.encryption_version,
     )
 
 
@@ -63,7 +103,7 @@ def update_item_endpoint(
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-    return update_item(db, item_id, org_id, data.name, data.notes, data.fields)
+    return update_item(db, item_id, org_id, data.name, data.notes, data.fields, data.encryption_version)
 
 
 @router.delete("/{item_id}", status_code=204)

@@ -12,7 +12,7 @@ from app.config import settings
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
+    """Add security headers to all responses, including Content-Security-Policy."""
 
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
@@ -23,6 +23,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "camera=(), microphone=(), geolocation=()"
         )
         response.headers["X-XSS-Protection"] = "0"
+
+        # Content-Security-Policy: restrict scripts, styles, connections
+        origins = " ".join(settings.CORS_ORIGINS)
+        csp_parts = [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+            f"connect-src 'self' {origins}",
+            "img-src 'self' data: blob:",
+            "font-src 'self'",
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
+
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=63072000; includeSubDomains"
@@ -122,7 +139,7 @@ def _start_scheduler():
 async def lifespan(app: FastAPI):
     # Startup: import models so they're registered
     from app.auth.models import Session, User  # noqa: F401
-    from app.orgs.models import OrgMembership, Organization  # noqa: F401
+    from app.orgs.models import OrgMembership, OrgMemberKey, Organization  # noqa: F401
     from app.items.models import Item, ItemFieldValue  # noqa: F401
     from app.files.models import FileAttachment  # noqa: F401
     from app.reminders.models import CustomReminder  # noqa: F401
@@ -133,6 +150,7 @@ async def lifespan(app: FastAPI):
     from app.item_links.models import ItemLink  # noqa: F401
     from app.saved_contacts.models import SavedContact, ItemSavedContact  # noqa: F401
     from app.invitations.models import InvitationToken  # noqa: F401
+    from app.audit.models import AuditLog  # noqa: F401
 
     # Start background scheduler
     scheduler = _start_scheduler()
@@ -155,6 +173,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
+    expose_headers=["X-Encryption-Version"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)

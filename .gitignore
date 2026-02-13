@@ -80,7 +80,10 @@ secrets.yml
 *.swp
 *.swo
 *~
+
+# Claude
 .claude/
+CLAUDE.md
 
 # OS
 .DS_Store

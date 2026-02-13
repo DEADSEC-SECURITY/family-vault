@@ -17,7 +17,15 @@ export function removeToken(): void {
   localStorage.removeItem(ORG_KEY);
 }
 
-export function getStoredUser(): { id: string; email: string; full_name: string } | null {
+export interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  migration_items_v1?: number;
+  migration_files_v1?: number;
+}
+
+export function getStoredUser(): User | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
@@ -28,12 +36,15 @@ export function getStoredUser(): { id: string; email: string; full_name: string 
   }
 }
 
-export function setStoredUser(user: {
-  id: string;
-  email: string;
-  full_name: string;
-}): void {
+export function setStoredUser(user: User): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+/** Update specific fields on the stored user without replacing the whole object. */
+export function updateStoredUser(updates: Partial<User>): void {
+  const current = getStoredUser();
+  if (!current) return;
+  setStoredUser({ ...current, ...updates });
 }
 
 export function getActiveOrgId(): string | null {

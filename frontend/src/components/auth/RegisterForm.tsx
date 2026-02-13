@@ -5,6 +5,20 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { setToken, setStoredUser, setActiveOrgId } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
+import {
+  deriveMasterKey,
+  deriveSymmetricKey,
+  hashMasterPassword,
+  generateKeyPair,
+  exportPublicKey,
+  encryptPrivateKey,
+  generateOrgKey,
+  wrapOrgKey,
+  exportRecoveryKey,
+  encryptPrivateKeyForRecovery,
+  CRYPTO_CONSTANTS,
+} from "@/lib/crypto";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import RecoveryCodesCard from "./RecoveryCodesCard";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -25,6 +40,22 @@ export function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Recovery key step
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
+
+  // Hold registration data for after recovery confirmation
+  const [pendingRegData, setPendingRegData] = useState<{
+    token: string;
+    user: {
+      id: string;
+      email: string;
+      full_name: string;
+      active_org_id: string | null;
+    };
+    orgKey: Uint8Array;
+    orgId: string | null;
+  } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,17 +73,72 @@ export function RegisterForm() {
     setLoading(true);
 
     try {
+      // Derive master key from password + email
+      const masterKey = await deriveMasterKey(
+        password,
+        email,
+        CRYPTO_CONSTANTS.KDF_ITERATIONS,
+      );
+
+      // Derive symmetric key from master key
+      const symmetricKey = await deriveSymmetricKey(masterKey);
+
+      // Compute master password hash (this is what server stores)
+      const masterPasswordHash = await hashMasterPassword(masterKey, password);
+
+      // Generate RSA keypair
+      const keyPair = await generateKeyPair();
+
+      // Export public key
+      const publicKeyB64 = await exportPublicKey(keyPair.publicKey);
+
+      // Encrypt private key with symmetric key
+      const encryptedPrivateKey = await encryptPrivateKey(
+        keyPair.privateKey,
+        symmetricKey,
+      );
+
+      // Generate org key and wrap it with the user's public key
+      const orgKey = generateOrgKey();
+      const encryptedOrgKey = await wrapOrgKey(orgKey, keyPair.publicKey);
+
+      // Generate recovery key and encrypt private key for recovery
+      const recoveryKeyB64 = await exportRecoveryKey(masterKey);
+      const recoveryEncryptedPrivateKey = await encryptPrivateKeyForRecovery(
+        keyPair.privateKey,
+        recoveryKeyB64,
+      );
+
+      // Register with the server (server never sees password or master key)
       const res = await api.auth.register({
         email,
-        password,
+        password: "zero-knowledge", // placeholder — server uses master_password_hash
         full_name: fullName,
+        master_password_hash: masterPasswordHash,
+        encrypted_private_key: encryptedPrivateKey,
+        public_key: publicKeyB64,
+        encrypted_org_key: encryptedOrgKey,
+        recovery_encrypted_private_key: recoveryEncryptedPrivateKey,
+        kdf_iterations: CRYPTO_CONSTANTS.KDF_ITERATIONS,
       });
-      setToken(res.token);
-      setStoredUser(res.user);
+
+      // Store keys in memory
+      keyStore.setMasterKey(masterKey);
+      keyStore.setSymmetricKey(symmetricKey);
+      keyStore.setPrivateKey(keyPair.privateKey);
+      keyStore.setPublicKey(keyPair.publicKey);
       if (res.user.active_org_id) {
-        setActiveOrgId(res.user.active_org_id);
+        keyStore.setOrgKey(res.user.active_org_id, orgKey);
       }
-      router.push("/dashboard");
+
+      // Show recovery key before completing registration
+      setRecoveryKey(recoveryKeyB64);
+      setPendingRegData({
+        token: res.token,
+        user: res.user,
+        orgKey,
+        orgId: res.user.active_org_id,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -60,11 +146,32 @@ export function RegisterForm() {
     }
   }
 
+  function handleConfirmRecovery() {
+    if (!pendingRegData) return;
+
+    setToken(pendingRegData.token);
+    setStoredUser(pendingRegData.user);
+    if (pendingRegData.orgId) {
+      setActiveOrgId(pendingRegData.orgId);
+    }
+    router.push("/dashboard");
+  }
+
+  // Recovery key confirmation screen
+  if (recoveryKey) {
+    return (
+      <RecoveryCodesCard
+        recoveryKey={recoveryKey}
+        confirmRecovery={handleConfirmRecovery}
+      />
+    );
+  }
+
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl font-bold">FamilyVault</CardTitle>
-        <CardDescription>Create your secure vault</CardDescription>
+        <CardDescription>Create your zero-knowledge vault</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
@@ -96,7 +203,7 @@ export function RegisterForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Master Password</Label>
             <Input
               id="password"
               type="password"
@@ -106,9 +213,13 @@ export function RegisterForm() {
               required
               minLength={8}
             />
+            <p className="text-xs text-gray-500">
+              Your master password is used to encrypt your vault. It is never
+              sent to the server.
+            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Label htmlFor="confirmPassword">Confirm Master Password</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -121,7 +232,7 @@ export function RegisterForm() {
         </CardContent>
         <CardFooter className="flex flex-col gap-3 pt-6">
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creating account..." : "Create account"}
+            {loading ? "Generating keys..." : "Create account"}
           </Button>
           <p className="text-sm text-muted-foreground">
             Already have an account?{" "}

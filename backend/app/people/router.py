@@ -126,6 +126,7 @@ def create_person(
         relationship=data.relationship,
         notes=data.notes,
         can_login=data.can_login,
+        encryption_version=data.encryption_version,
     )
     db.add(person)
     db.commit()
@@ -183,6 +184,8 @@ def update_person(
                 detail="Email is required to grant login access",
             )
         person.can_login = data.can_login
+    if data.encryption_version is not None:
+        person.encryption_version = data.encryption_version
 
     db.commit()
     db.refresh(person)
@@ -321,6 +324,7 @@ def list_item_people(
                     email=person.email,
                     phone=person.phone,
                     relationship=person.relationship,
+                    encryption_version=person.encryption_version,
                     created_at=link.created_at,
                 )
             )
@@ -380,6 +384,7 @@ def link_person(
         email=person.email,
         phone=person.phone,
         relationship=person.relationship,
+        encryption_version=person.encryption_version,
         created_at=link.created_at,
     )
 

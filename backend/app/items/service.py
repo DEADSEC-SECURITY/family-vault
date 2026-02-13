@@ -85,24 +85,34 @@ def _get_subcategory_def(category: str, subcategory: str) -> dict | None:
 
 
 def _item_to_response(item: Item, org_key: bytes) -> ItemResponse:
-    # Get subcategory definition to identify encrypted fields
-    sub_def = _get_subcategory_def(item.category, item.subcategory)
-    encrypted_fields = _get_encrypted_fields(sub_def) if sub_def else set()
+    is_client_encrypted = item.encryption_version == 2
 
-    # Decrypt field values that are encrypted
-    decrypted_fields = []
-    for fv in item.field_values:
-        field_value = fv.field_value
-        if fv.field_key in encrypted_fields and field_value:
-            field_value = decrypt_field(field_value, org_key)
-
-        decrypted_fields.append(
+    if is_client_encrypted:
+        # Client-side encryption (v2): return values as-is (client will decrypt)
+        fields_out = [
             FieldValueOut(
                 field_key=fv.field_key,
-                field_value=field_value,
+                field_value=fv.field_value,
                 field_type=fv.field_type,
             )
-        )
+            for fv in item.field_values
+        ]
+    else:
+        # Server-side encryption (v1): decrypt marked fields
+        sub_def = _get_subcategory_def(item.category, item.subcategory)
+        encrypted_fields = _get_encrypted_fields(sub_def) if sub_def else set()
+        fields_out = []
+        for fv in item.field_values:
+            field_value = fv.field_value
+            if fv.field_key in encrypted_fields and field_value:
+                field_value = decrypt_field(field_value, org_key)
+            fields_out.append(
+                FieldValueOut(
+                    field_key=fv.field_key,
+                    field_value=field_value,
+                    field_type=fv.field_type,
+                )
+            )
 
     return ItemResponse(
         id=item.id,
@@ -112,7 +122,8 @@ def _item_to_response(item: Item, org_key: bytes) -> ItemResponse:
         name=item.name,
         notes=item.notes,
         is_archived=item.is_archived,
-        fields=decrypted_fields,
+        encryption_version=item.encryption_version,
+        fields=fields_out,
         files=[
             FileOut(
                 id=f.id,
@@ -120,6 +131,7 @@ def _item_to_response(item: Item, org_key: bytes) -> ItemResponse:
                 file_size=f.file_size,
                 mime_type=f.mime_type,
                 purpose=f.purpose,
+                encryption_version=f.encryption_version,
                 created_at=f.created_at.isoformat(),
             )
             for f in item.files
@@ -138,6 +150,7 @@ def create_item(
     name: str,
     notes: str | None,
     fields: list[FieldValueIn],
+    encryption_version: int = 1,
 ) -> ItemResponse:
     sub_def = _validate_category(category, subcategory)
     # Skip required field checks on create — items are created instantly
@@ -147,9 +160,7 @@ def create_item(
     # Build field type lookup
     field_types = {f["key"]: f["type"] for f in _get_all_fields(sub_def)}
 
-    # Get org encryption key once for encrypting sensitive fields
     org_key = _get_org_key(db, org_id)
-    encrypted_fields = _get_encrypted_fields(sub_def)
 
     item = Item(
         org_id=org_id,
@@ -158,15 +169,19 @@ def create_item(
         subcategory=subcategory,
         name=name,
         notes=notes,
+        encryption_version=encryption_version,
     )
     db.add(item)
     db.flush()
 
+    # v2 (client-side): store field values as-is (already encrypted by client)
+    # v1 (server-side): encrypt marked fields
+    encrypted_fields = _get_encrypted_fields(sub_def) if encryption_version == 1 else set()
+
     for field in fields:
         if field.field_value is not None:
-            # Encrypt field value if it's marked as encrypted
             field_value = field.field_value
-            if field.field_key in encrypted_fields:
+            if encryption_version == 1 and field.field_key in encrypted_fields:
                 field_value = encrypt_field(field_value, org_key)
 
             fv = ItemFieldValue(
@@ -276,6 +291,7 @@ def update_item(
     name: str | None,
     notes: str | None,
     fields: list[FieldValueIn] | None,
+    encryption_version: int | None = None,
 ) -> ItemResponse:
     item = (
         db.query(Item)
@@ -291,7 +307,10 @@ def update_item(
     if notes is not None:
         item.notes = notes
 
-    # Get org key once — used for both field encryption and response decryption
+    # Update encryption version if specified (e.g. migrating v1 → v2)
+    if encryption_version is not None:
+        item.encryption_version = encryption_version
+
     org_key = _get_org_key(db, org_id)
 
     if fields is not None:
@@ -301,15 +320,18 @@ def update_item(
         # Skip required field checks — auto-save sends partial data
         _validate_fields(sub_def, fields, check_required=False)
         field_types = {f["key"]: f["type"] for f in _get_all_fields(sub_def)}
-        encrypted_fields = _get_encrypted_fields(sub_def)
+
+        # v2 (client-side): store field values as-is
+        # v1 (server-side): encrypt marked fields
+        use_server_encrypt = item.encryption_version == 1
+        encrypted_fields = _get_encrypted_fields(sub_def) if use_server_encrypt else set()
 
         # Delete existing field values and replace
         db.query(ItemFieldValue).filter(ItemFieldValue.item_id == item.id).delete()
         for field in fields:
             if field.field_value is not None:
-                # Encrypt field value if it's marked as encrypted
                 field_value = field.field_value
-                if field.field_key in encrypted_fields:
+                if use_server_encrypt and field.field_key in encrypted_fields:
                     field_value = encrypt_field(field_value, org_key)
 
                 fv = ItemFieldValue(

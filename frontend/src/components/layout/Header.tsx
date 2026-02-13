@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LogOut, Search } from "lucide-react";
+import { KeyRound, LogOut, Search, Shield } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { api } from "@/lib/api";
-import { removeToken, getStoredUser } from "@/lib/auth";
+import { removeToken, getStoredUser, User } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 
 export function Header() {
@@ -19,7 +20,8 @@ export function Header() {
   const [query, setQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const user = getStoredUser();
+  const user: User | null = getStoredUser();
+  const hasPendingMigrations = (user?.migration_items_v1 ?? 0) > 0 || (user?.migration_files_v1 ?? 0) > 0;
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -34,6 +36,7 @@ export function Header() {
     } catch {
       // ignore
     }
+    keyStore.clear();
     removeToken();
     router.push("/login");
   }
@@ -78,6 +81,19 @@ export function Header() {
                 <p className="text-sm font-medium truncate">{user.full_name}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
+            )}
+            {hasPendingMigrations && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-gray-100 transition-colors"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  router.push("/settings/encryption");
+                }}
+              >
+                <Shield className="h-4 w-4" />
+                Encryption Migration
+              </button>
             )}
             <button
               type="button"

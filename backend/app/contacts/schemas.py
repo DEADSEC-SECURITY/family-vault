@@ -21,6 +21,7 @@ class ItemContactCreate(BaseModel):
     value: str = ""  # auto-composed for address type if not provided
     contact_type: str = "phone"  # phone, email, url, address
     sort_order: int = 0
+    encryption_version: int = 1
 
     # Structured address fields (only for contact_type == "address")
     address_line1: str | None = None
@@ -37,6 +38,7 @@ class ItemContactOut(BaseModel):
     value: str
     contact_type: str
     sort_order: int = 0
+    encryption_version: int = 1
 
     # Structured address fields
     address_line1: str | None = None
@@ -52,6 +54,7 @@ class ItemContactUpdate(BaseModel):
     label: str | None = None
     value: str | None = None
     contact_type: str | None = None
+    encryption_version: int | None = None
 
     # Structured address fields
     address_line1: str | None = None

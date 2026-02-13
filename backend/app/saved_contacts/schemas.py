@@ -22,6 +22,7 @@ class SavedContactCreate(BaseModel):
     website: str | None = None
     address: str | None = None
     notes: str | None = None
+    encryption_version: int = 1
 
 
 class SavedContactUpdate(BaseModel):
@@ -33,6 +34,7 @@ class SavedContactUpdate(BaseModel):
     website: str | None = None
     address: str | None = None
     notes: str | None = None
+    encryption_version: int | None = None
 
 
 class SavedContactOut(BaseModel):
@@ -46,6 +48,7 @@ class SavedContactOut(BaseModel):
     website: str | None = None
     address: str | None = None
     notes: str | None = None
+    encryption_version: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -66,4 +69,5 @@ class LinkedSavedContactOut(BaseModel):
     email: str | None = None
     phone: str | None = None
     website: str | None = None
+    encryption_version: int = 1
     created_at: datetime

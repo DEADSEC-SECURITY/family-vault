@@ -111,6 +111,7 @@ def create_contact(
         value=value,
         contact_type=data.contact_type,
         sort_order=data.sort_order,
+        encryption_version=data.encryption_version,
         address_line1=data.address_line1 if data.contact_type == "address" else None,
         address_line2=data.address_line2 if data.contact_type == "address" else None,
         address_city=data.address_city if data.contact_type == "address" else None,
@@ -200,6 +201,9 @@ def update_contact(
         contact.address_zip = None
         if data.value is not None:
             contact.value = data.value
+
+    if data.encryption_version is not None:
+        contact.encryption_version = data.encryption_version
 
     db.commit()
     db.refresh(contact)

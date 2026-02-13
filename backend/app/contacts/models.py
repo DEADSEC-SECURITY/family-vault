@@ -62,6 +62,7 @@ class ItemContact(Base):
     address_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     address_state: Mapped[str | None] = mapped_column(String(100), nullable=True)
     address_zip: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    encryption_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

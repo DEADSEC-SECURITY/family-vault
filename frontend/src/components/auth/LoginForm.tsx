@@ -4,7 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { setToken, setStoredUser, setActiveOrgId } from "@/lib/auth";
+import { setToken, setStoredUser, setActiveOrgId, updateStoredUser } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
+import {
+  deriveMasterKey,
+  deriveSymmetricKey,
+  hashMasterPassword,
+  decryptPrivateKey,
+  unwrapOrgKey,
+  importPublicKey,
+} from "@/lib/crypto";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,12 +39,69 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await api.auth.login({ email, password });
-      setToken(res.token);
-      setStoredUser(res.user);
-      if (res.user.active_org_id) {
-        setActiveOrgId(res.user.active_org_id);
+      // Pre-login: get KDF iterations and ZK status for this email
+      const prelogin = await api.auth.prelogin(email);
+
+      let res;
+      if (prelogin.is_zero_knowledge) {
+        // ZK mode: derive master key and send hash
+        const masterKey = await deriveMasterKey(
+          password,
+          email,
+          prelogin.kdf_iterations,
+        );
+        const masterPasswordHash = await hashMasterPassword(masterKey, password);
+
+        res = await api.auth.login({
+          email,
+          password: "zero-knowledge",
+          master_password_hash: masterPasswordHash,
+        });
+
+        // Store session
+        setToken(res.token);
+        setStoredUser(res.user);
+        if (res.user.active_org_id) {
+          setActiveOrgId(res.user.active_org_id);
+        }
+
+        // Decrypt keys if present
+        if (res.encrypted_private_key && res.public_key) {
+          const symmetricKey = await deriveSymmetricKey(masterKey);
+          const privateKey = await decryptPrivateKey(
+            res.encrypted_private_key,
+            symmetricKey,
+          );
+          const publicKey = await importPublicKey(res.public_key);
+
+          keyStore.setMasterKey(masterKey);
+          keyStore.setSymmetricKey(symmetricKey);
+          keyStore.setPrivateKey(privateKey);
+          keyStore.setPublicKey(publicKey);
+
+          if (res.encrypted_org_key && res.user.active_org_id) {
+            const orgKey = await unwrapOrgKey(res.encrypted_org_key, privateKey);
+            keyStore.setOrgKey(res.user.active_org_id, orgKey);
+          }
+        }
+      } else {
+        // Legacy mode: send raw password
+        res = await api.auth.login({ email, password });
+
+        setToken(res.token);
+        setStoredUser(res.user);
+        if (res.user.active_org_id) {
+          setActiveOrgId(res.user.active_org_id);
+        }
       }
+
+      // Check for pending encryption migrations (non-blocking)
+      api.migration.pending().then((s) => {
+        if (s.items_v1 > 0 || s.files_v1 > 0) {
+          updateStoredUser({ migration_items_v1: s.items_v1, migration_files_v1: s.files_v1 });
+        }
+      }).catch(() => {});
+
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -70,7 +136,7 @@ export function LoginForm() {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Master Password</Label>
               <Link
                 href="/forgot-password"
                 className="text-sm text-primary hover:underline"
@@ -81,7 +147,7 @@ export function LoginForm() {
             <Input
               id="password"
               type="password"
-              placeholder="Enter your password"
+              placeholder="Enter your master password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -90,7 +156,7 @@ export function LoginForm() {
         </CardContent>
         <CardFooter className="flex flex-col gap-3 pt-6">
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? "Decrypting vault..." : "Sign in"}
           </Button>
           <p className="text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}

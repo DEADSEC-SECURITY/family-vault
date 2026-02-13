@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session as DBSession
 from uuid import uuid4
 
+from app.audit.service import log_audit
 from app.auth.models import User
 from app.auth.schemas import (
     AcceptInviteRequest,
     ChangePasswordRequest,
     ForgotPasswordRequest,
     InviteValidation,
+    OrgKeyExchange,
+    PendingKeyMember,
+    PreloginRequest,
+    PreloginResponse,
     ResetPasswordRequest,
     ResetValidation,
     TokenResponse,
@@ -32,15 +37,37 @@ from app.invitations.service import (
     validate_invite_token,
     validate_reset_token,
 )
-from app.orgs.models import Organization
-from app.orgs.service import create_organization, get_user_orgs
+from app.orgs.models import OrgMemberKey, OrgMembership, Organization
+from app.orgs.service import create_organization, get_active_org_id, get_user_orgs
 from app.people.models import Person
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+# ── Pre-login (public) ────────────────────────────────────────────
+
+
+@router.post("/prelogin", response_model=PreloginResponse)
+def prelogin(data: PreloginRequest, db: DBSession = Depends(get_db)):
+    """Return KDF iterations for a given email so the client can derive keys.
+
+    Always returns a response (even for unknown emails) to prevent enumeration.
+    """
+    user = get_user_by_email(db, data.email.lower().strip())
+    kdf_iterations = user.kdf_iterations if user else 600000
+    is_zk = bool(user and user.encrypted_private_key)
+    return PreloginResponse(
+        kdf_iterations=kdf_iterations,
+        email=data.email.lower().strip(),
+        is_zero_knowledge=is_zk,
+    )
+
+
+# ── Register ──────────────────────────────────────────────────────
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(data: UserCreate, db: DBSession = Depends(get_db)):
+def register(data: UserCreate, request: Request, db: DBSession = Depends(get_db)):
     existing = get_user_by_email(db, data.email.lower().strip())
     if existing:
         raise HTTPException(
@@ -48,10 +75,18 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
             detail="Email already registered",
         )
 
+    # Zero-knowledge mode: client sends master_password_hash instead of raw password
+    is_zk = data.master_password_hash is not None
+    auth_value = data.master_password_hash if is_zk else data.password
+
     user = User(
         email=data.email.lower().strip(),
-        password_hash=hash_password(data.password),
+        password_hash=hash_password(auth_value),
         full_name=data.full_name.strip(),
+        encrypted_private_key=data.encrypted_private_key,
+        public_key=data.public_key,
+        kdf_iterations=data.kdf_iterations or 600000,
+        recovery_encrypted_private_key=data.recovery_encrypted_private_key,
     )
     db.add(user)
     db.flush()
@@ -61,8 +96,17 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
         db, name=f"{user.full_name}'s Vault", created_by=user.id
     )
 
+    # Store the client-wrapped org key if provided
+    if is_zk and data.encrypted_org_key:
+        org_member_key = OrgMemberKey(
+            org_id=org.id,
+            user_id=user.id,
+            encrypted_org_key=data.encrypted_org_key,
+        )
+        db.add(org_member_key)
+        db.flush()
+
     # Auto-create person record for the user
-    # Split full_name into first and last name (or use defaults)
     name_parts = user.full_name.strip().split(maxsplit=1)
     first_name = name_parts[0] if name_parts else "User"
     last_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -80,6 +124,11 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
 
     session = create_session(db, user.id)
 
+    ip = request.client.host if request.client else None
+    log_audit(db, action="register", user_id=user.id, org_id=org.id,
+              detail=f"User registered (ZK={is_zk})", ip_address=ip)
+    db.commit()
+
     return TokenResponse(
         token=session.token,
         user=UserResponse(
@@ -89,20 +138,53 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
             created_at=user.created_at.isoformat(),
             active_org_id=org.id,
         ),
+        encrypted_private_key=user.encrypted_private_key,
+        public_key=user.public_key,
+        kdf_iterations=user.kdf_iterations,
+        encrypted_org_key=data.encrypted_org_key,
     )
 
 
+# ── Login ─────────────────────────────────────────────────────────
+
+
 @router.post("/login", response_model=TokenResponse)
-def login(data: UserLogin, db: DBSession = Depends(get_db)):
+def login(data: UserLogin, request: Request, db: DBSession = Depends(get_db)):
     user = get_user_by_email(db, data.email.lower().strip())
-    if not user or not verify_password(data.password, user.password_hash):
+
+    # Zero-knowledge mode: verify master_password_hash, else verify raw password
+    is_zk = data.master_password_hash is not None
+    auth_value = data.master_password_hash if is_zk else data.password
+
+    ip = request.client.host if request.client else None
+
+    if not user or not verify_password(auth_value, user.password_hash):
+        log_audit(db, action="login_failed", detail=f"Failed login for {data.email}",
+                  ip_address=ip)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     session = create_session(db, user.id)
+    log_audit(db, action="login", user_id=user.id, ip_address=ip)
     orgs = get_user_orgs(db, user.id)
+    active_org_id = orgs[0].id if orgs else None
+
+    # Fetch the user's wrapped org key for their active org
+    encrypted_org_key = None
+    if active_org_id:
+        member_key = (
+            db.query(OrgMemberKey)
+            .filter(
+                OrgMemberKey.org_id == active_org_id,
+                OrgMemberKey.user_id == user.id,
+            )
+            .first()
+        )
+        if member_key:
+            encrypted_org_key = member_key.encrypted_org_key
 
     return TokenResponse(
         token=session.token,
@@ -111,8 +193,12 @@ def login(data: UserLogin, db: DBSession = Depends(get_db)):
             email=user.email,
             full_name=user.full_name,
             created_at=user.created_at.isoformat(),
-            active_org_id=orgs[0].id if orgs else None,
+            active_org_id=active_org_id,
         ),
+        encrypted_private_key=user.encrypted_private_key,
+        public_key=user.public_key,
+        kdf_iterations=user.kdf_iterations,
+        encrypted_org_key=encrypted_org_key,
     )
 
 
@@ -138,6 +224,140 @@ def me(
         created_at=user.created_at.isoformat(),
         active_org_id=orgs[0].id if orgs else None,
     )
+
+
+# ── Org key exchange ──────────────────────────────────────────────
+
+
+@router.post("/org/{org_id}/keys", status_code=201)
+def store_org_key(
+    org_id: str,
+    data: OrgKeyExchange,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Store a wrapped org key for a target user (key ceremony).
+
+    Called by an existing org member who wraps the org key with the
+    target user's public key.
+    """
+    # Verify caller belongs to this org
+    caller_org_id = get_active_org_id(user, db)
+    if caller_org_id != org_id:
+        raise HTTPException(status_code=403, detail="Not a member of this org")
+
+    # Verify target user exists
+    target_user = db.query(User).filter(User.id == data.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Upsert the org member key
+    existing = (
+        db.query(OrgMemberKey)
+        .filter(
+            OrgMemberKey.org_id == org_id,
+            OrgMemberKey.user_id == data.user_id,
+        )
+        .first()
+    )
+    if existing:
+        existing.encrypted_org_key = data.encrypted_org_key
+    else:
+        member_key = OrgMemberKey(
+            org_id=org_id,
+            user_id=data.user_id,
+            encrypted_org_key=data.encrypted_org_key,
+        )
+        db.add(member_key)
+
+    ip = request.client.host if request.client else None
+    log_audit(db, action="key_ceremony", user_id=user.id, org_id=org_id,
+              detail=f"Granted vault access to user {data.user_id}", ip_address=ip)
+    db.commit()
+    return {"message": "Org key stored successfully"}
+
+
+@router.get("/org/{org_id}/my-key")
+def get_my_org_key(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Get the current user's wrapped org key for a specific org."""
+    member_key = (
+        db.query(OrgMemberKey)
+        .filter(
+            OrgMemberKey.org_id == org_id,
+            OrgMemberKey.user_id == user.id,
+        )
+        .first()
+    )
+    if not member_key:
+        raise HTTPException(status_code=404, detail="No org key found")
+
+    return {"encrypted_org_key": member_key.encrypted_org_key}
+
+
+@router.get("/user/{user_id}/public-key")
+def get_user_public_key(
+    user_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Get a user's public key (for wrapping org keys during key ceremony)."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target or not target.public_key:
+        raise HTTPException(status_code=404, detail="Public key not found")
+
+    return {"public_key": target.public_key}
+
+
+@router.get("/org/{org_id}/pending-keys", response_model=list[PendingKeyMember])
+def get_pending_key_members(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """List org members who have a public key but no wrapped org key yet.
+
+    These members need the key ceremony: an existing member must wrap
+    the org key with each pending member's RSA public key.
+    """
+    from sqlalchemy import and_
+
+    caller_org_id = get_active_org_id(user, db)
+    if caller_org_id != org_id:
+        raise HTTPException(status_code=403, detail="Not a member of this org")
+
+    members_with_keys = (
+        db.query(OrgMemberKey.user_id)
+        .filter(OrgMemberKey.org_id == org_id)
+        .subquery()
+    )
+
+    pending = (
+        db.query(User)
+        .join(OrgMembership, and_(
+            OrgMembership.user_id == User.id,
+            OrgMembership.org_id == org_id,
+        ))
+        .filter(
+            User.public_key.isnot(None),
+            User.id.notin_(members_with_keys),
+        )
+        .all()
+    )
+
+    return [
+        PendingKeyMember(
+            user_id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            public_key=u.public_key,
+        )
+        for u in pending
+    ]
 
 
 # ── Invitation acceptance (public — no auth) ────────────────────
@@ -175,10 +395,23 @@ def accept_invite_endpoint(
             status_code=400, detail="Password must be at least 8 characters"
         )
 
+    # Zero-knowledge mode: use master_password_hash for auth
+    is_zk = data.master_password_hash is not None
+    password_for_auth = data.master_password_hash if is_zk else data.password
+
     try:
-        user, session, org = accept_invitation(db, data.token, data.password)
+        user, session, org = accept_invitation(db, data.token, password_for_auth)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Store zero-knowledge keys if provided
+    if is_zk:
+        user.encrypted_private_key = data.encrypted_private_key
+        user.public_key = data.public_key
+        user.recovery_encrypted_private_key = data.recovery_encrypted_private_key
+        if data.kdf_iterations:
+            user.kdf_iterations = data.kdf_iterations
+        db.commit()
 
     return TokenResponse(
         token=session.token,
@@ -189,6 +422,9 @@ def accept_invite_endpoint(
             created_at=user.created_at.isoformat(),
             active_org_id=org.id,
         ),
+        encrypted_private_key=user.encrypted_private_key,
+        public_key=user.public_key,
+        kdf_iterations=user.kdf_iterations,
     )
 
 
@@ -212,26 +448,73 @@ def validate_reset(
     token: str = Query(...),
     db: DBSession = Depends(get_db),
 ):
-    """Validate a password reset token."""
+    """Validate a password reset token. Returns email and recovery key for ZK reset."""
     token_obj = validate_reset_token(db, token)
-    return ResetValidation(valid=token_obj is not None)
+    if not token_obj:
+        return ResetValidation(valid=False)
+
+    user = db.query(User).filter(User.id == token_obj.user_id).first()
+    return ResetValidation(
+        valid=True,
+        email=token_obj.email,
+        recovery_encrypted_private_key=user.recovery_encrypted_private_key if user else None,
+    )
 
 
 @router.post("/reset-password")
 def reset_password_endpoint(
     data: ResetPasswordRequest,
+    request: Request,
     db: DBSession = Depends(get_db),
 ):
-    """Reset password using a valid token."""
+    """Reset password using a valid token.
+
+    In zero-knowledge mode, client sends new master_password_hash and
+    re-encrypted private key.
+    """
     if len(data.password) < 8:
         raise HTTPException(
             status_code=400, detail="Password must be at least 8 characters"
         )
 
+    is_zk = data.master_password_hash is not None
+    password_for_auth = data.master_password_hash if is_zk else data.password
+
     try:
-        reset_password(db, data.token, data.password)
+        reset_password(db, data.token, password_for_auth)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    ip = request.client.host if request.client else None
+
+    # Update zero-knowledge keys if provided
+    if is_zk and data.encrypted_private_key:
+        token_obj = validate_reset_token(db, data.token)
+        if token_obj:
+            user = get_user_by_email(db, token_obj.email)
+            if user:
+                user.encrypted_private_key = data.encrypted_private_key
+                if data.recovery_encrypted_private_key:
+                    user.recovery_encrypted_private_key = data.recovery_encrypted_private_key
+                if data.kdf_iterations:
+                    user.kdf_iterations = data.kdf_iterations
+                # Invalidate all sessions on password reset
+                from app.auth.models import Session as SessionModel
+                db.query(SessionModel).filter(SessionModel.user_id == user.id).delete()
+                log_audit(db, action="password_reset", user_id=user.id,
+                          detail="Password reset (ZK), all sessions invalidated", ip_address=ip)
+                db.commit()
+    else:
+        # Legacy mode: also invalidate sessions
+        token_obj = validate_reset_token(db, data.token)
+        if token_obj:
+            user = get_user_by_email(db, token_obj.email)
+            if user:
+                from app.auth.models import Session as SessionModel
+                db.query(SessionModel).filter(SessionModel.user_id == user.id).delete()
+                log_audit(db, action="password_reset", user_id=user.id,
+                          detail="Password reset (legacy), all sessions invalidated", ip_address=ip)
+                db.commit()
 
     return {"message": "Password reset successfully"}
 
@@ -242,19 +525,59 @@ def reset_password_endpoint(
 @router.post("/change-password")
 def change_password(
     data: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
+    authorization: str | None = Header(None),
 ):
-    """Change password for the currently logged-in user."""
-    if len(data.new_password) < 8:
-        raise HTTPException(
-            status_code=400, detail="New password must be at least 8 characters"
-        )
+    """Change password for the currently logged-in user.
 
-    if not verify_password(data.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    In zero-knowledge mode, client sends old and new master_password_hash
+    along with re-encrypted private key.
 
-    user.password_hash = hash_password(data.new_password)
+    After password change, all other sessions for this user are invalidated
+    (the current session is preserved).
+    """
+    is_zk = data.current_master_password_hash is not None
+
+    if is_zk:
+        # Verify current master password hash
+        if not verify_password(data.current_master_password_hash, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+        if not data.new_master_password_hash:
+            raise HTTPException(status_code=400, detail="New master password hash required")
+
+        user.password_hash = hash_password(data.new_master_password_hash)
+
+        if data.new_encrypted_private_key:
+            user.encrypted_private_key = data.new_encrypted_private_key
+        if data.new_recovery_encrypted_private_key:
+            user.recovery_encrypted_private_key = data.new_recovery_encrypted_private_key
+        if data.new_kdf_iterations:
+            user.kdf_iterations = data.new_kdf_iterations
+    else:
+        # Legacy mode
+        if len(data.new_password) < 8:
+            raise HTTPException(
+                status_code=400, detail="New password must be at least 8 characters"
+            )
+        if not verify_password(data.current_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+        user.password_hash = hash_password(data.new_password)
+
+    # Invalidate all other sessions for this user (keep current session)
+    current_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+    from app.auth.models import Session as SessionModel
+    query = db.query(SessionModel).filter(SessionModel.user_id == user.id)
+    if current_token:
+        query = query.filter(SessionModel.token != current_token)
+    query.delete()
+
+    ip = request.client.host if request.client else None
+    log_audit(db, action="password_change", user_id=user.id,
+              detail="Password changed, other sessions invalidated", ip_address=ip)
     db.commit()
 
     return {"message": "Password changed successfully"}

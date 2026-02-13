@@ -7,6 +7,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { RemindersPanel } from "@/components/layout/RemindersPanel";
+import { KeyCeremonyBanner, WaitingForAccessBanner } from "@/components/auth/KeyCeremonyBanner";
+import { MigrationPrompt } from "@/components/auth/MigrationPrompt";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -42,10 +44,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
+        <KeyCeremonyBanner />
+        <WaitingForAccessBanner />
         <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
+      <MigrationPrompt />
     </div>
   );
 }
