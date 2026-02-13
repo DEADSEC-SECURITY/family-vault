@@ -171,6 +171,88 @@ async function decryptItemList(items: Item[]): Promise<Item[]> {
   return Promise.all(items.map(decryptItemResponse));
 }
 
+// ── People / contacts / saved-contacts encryption helpers ────────
+
+/** Encrypt sensitive person fields (phone, notes) before sending. */
+async function encryptPersonPayload<T extends { phone?: string | null; notes?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  if (data.phone) out.phone = await encryptString(data.phone, orgKey);
+  if (data.notes) out.notes = await encryptString(data.notes, orgKey);
+  return out as T;
+}
+
+/** Decrypt sensitive person fields. */
+async function decryptPersonFields<T extends { encryption_version?: number; phone?: string | null; notes?: string | null }>(person: T): Promise<T> {
+  if (person.encryption_version !== 2) return person;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return person;
+
+  const out = { ...person };
+  if (person.phone) try { out.phone = await decryptString(person.phone, orgKey); } catch { /* leave as-is */ }
+  if (person.notes) try { out.notes = await decryptString(person.notes, orgKey); } catch { /* leave as-is */ }
+  return out;
+}
+
+/** Encrypt sensitive item-contact fields (value, address_*) before sending. */
+async function encryptContactPayload<T extends { value?: string; address_line1?: string | null; address_line2?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  const rec = data as Record<string, unknown>;
+  for (const key of ["value", "address_line1", "address_line2", "address_city", "address_state", "address_zip"]) {
+    const val = rec[key];
+    if (val && typeof val === "string") out[key] = await encryptString(val, orgKey);
+  }
+  return out as T;
+}
+
+/** Decrypt sensitive item-contact fields. */
+async function decryptContactFields<T extends { encryption_version?: number; value?: string; address_line1?: string | null; address_line2?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null }>(contact: T): Promise<T> {
+  if (contact.encryption_version !== 2) return contact;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return contact;
+
+  const out = { ...contact };
+  if (contact.value) try { out.value = await decryptString(contact.value, orgKey); } catch { /* leave */ }
+  for (const key of ["address_line1", "address_line2", "address_city", "address_state", "address_zip"] as const) {
+    const val = contact[key];
+    if (val) try { (out as Record<string, unknown>)[key] = await decryptString(val, orgKey); } catch { /* leave */ }
+  }
+  return out;
+}
+
+/** Encrypt sensitive saved-contact fields (email, phone, address, notes). */
+async function encryptSavedContactPayload<T extends { email?: string | null; phone?: string | null; address?: string | null; notes?: string | null; encryption_version?: number }>(data: T): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const out: Record<string, unknown> = { ...data, encryption_version: 2 };
+  const rec = data as Record<string, unknown>;
+  for (const key of ["email", "phone", "address", "notes"]) {
+    const val = rec[key];
+    if (val && typeof val === "string") out[key] = await encryptString(val, orgKey);
+  }
+  return out as T;
+}
+
+/** Decrypt sensitive saved-contact fields. */
+async function decryptSavedContactFields<T extends { encryption_version?: number; email?: string | null; phone?: string | null; address?: string | null; notes?: string | null }>(contact: T): Promise<T> {
+  if (contact.encryption_version !== 2) return contact;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return contact;
+
+  const out = { ...contact };
+  for (const key of ["email", "phone", "address", "notes"] as const) {
+    const val = contact[key];
+    if (val) try { (out as Record<string, unknown>)[key] = await decryptString(val, orgKey); } catch { /* leave */ }
+  }
+  return out;
+}
+
 /**
  * Lazy migration: re-encrypt a v1 (server-side) item as v2 (client-side).
  * The item is already plaintext (server decrypted it). We encrypt and save in the background.
@@ -401,23 +483,25 @@ export const api = {
       ),
   },
   contacts: {
-    listForItem: (itemId: string) =>
-      fetchAPI<ItemContact[]>(`/contacts?item_id=${encodeURIComponent(itemId)}`),
-    create: (data: ItemContactCreate) =>
-      fetchAPI<ItemContact>("/contacts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: {
+    listForItem: async (itemId: string) => {
+      const contacts = await fetchAPI<ItemContact[]>(`/contacts?item_id=${encodeURIComponent(itemId)}`);
+      return Promise.all(contacts.map(decryptContactFields));
+    },
+    create: async (data: ItemContactCreate) => {
+      const encrypted = await encryptContactPayload(data);
+      const contact = await fetchAPI<ItemContact>("/contacts", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptContactFields(contact);
+    },
+    update: async (id: string, data: {
       label?: string; value?: string; contact_type?: string;
       address_line1?: string | null; address_line2?: string | null;
       address_city?: string | null; address_state?: string | null;
-      address_zip?: string | null;
-    }) =>
-      fetchAPI<ItemContact>(`/contacts/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      address_zip?: string | null; encryption_version?: number;
+    }) => {
+      const encrypted = await encryptContactPayload(data);
+      const contact = await fetchAPI<ItemContact>(`/contacts/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptContactFields(contact);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/contacts/${id}`, { method: "DELETE" }),
     reorder: (data: { item_id: string; contacts: { id: string; sort_order: number }[] }) =>
@@ -490,31 +574,41 @@ export const api = {
       ),
   },
   people: {
-    list: () => fetchAPI<Person[]>("/people"),
-    get: (id: string) => fetchAPI<Person>(`/people/${id}`),
-    create: (data: PersonCreate) =>
-      fetchAPI<Person>("/people", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: PersonUpdate) =>
-      fetchAPI<Person>(`/people/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+    list: async () => {
+      const people = await fetchAPI<Person[]>("/people");
+      return Promise.all(people.map(decryptPersonFields));
+    },
+    get: async (id: string) => {
+      const person = await fetchAPI<Person>(`/people/${id}`);
+      return decryptPersonFields(person);
+    },
+    create: async (data: PersonCreate) => {
+      const encrypted = await encryptPersonPayload(data);
+      const person = await fetchAPI<Person>("/people", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptPersonFields(person);
+    },
+    update: async (id: string, data: PersonUpdate) => {
+      const encrypted = await encryptPersonPayload(data);
+      const person = await fetchAPI<Person>(`/people/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptPersonFields(person);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/people/${id}`, { method: "DELETE" }),
     resendInvite: (id: string) =>
       fetchAPI<{ message: string }>(`/people/${id}/resend-invite`, { method: "POST" }),
     getInviteLink: (id: string) =>
       fetchAPI<{ invite_url: string }>(`/people/${id}/invite-link`),
-    listForItem: (itemId: string) =>
-      fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`),
-    link: (itemId: string, personId: string, role?: string | null) =>
-      fetchAPI<LinkedPerson>(
+    listForItem: async (itemId: string) => {
+      const links = await fetchAPI<LinkedPerson[]>(`/people/item/${encodeURIComponent(itemId)}`);
+      return Promise.all(links.map(decryptPersonFields));
+    },
+    link: async (itemId: string, personId: string, role?: string | null) => {
+      const link = await fetchAPI<LinkedPerson>(
         `/people/item/${encodeURIComponent(itemId)}`,
         { method: "POST", body: JSON.stringify({ person_id: personId, role: role || null }) },
-      ),
+      );
+      return decryptPersonFields(link);
+    },
     unlink: (itemId: string, linkId: string) =>
       fetchAPI<void>(
         `/people/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
@@ -558,27 +652,37 @@ export const api = {
   },
 
   savedContacts: {
-    list: () => fetchAPI<SavedContact[]>("/saved-contacts"),
-    get: (id: string) => fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`),
-    create: (data: SavedContactCreate) =>
-      fetchAPI<SavedContact>("/saved-contacts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: SavedContactUpdate) =>
-      fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+    list: async () => {
+      const contacts = await fetchAPI<SavedContact[]>("/saved-contacts");
+      return Promise.all(contacts.map(decryptSavedContactFields));
+    },
+    get: async (id: string) => {
+      const contact = await fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`);
+      return decryptSavedContactFields(contact);
+    },
+    create: async (data: SavedContactCreate) => {
+      const encrypted = await encryptSavedContactPayload(data);
+      const contact = await fetchAPI<SavedContact>("/saved-contacts", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptSavedContactFields(contact);
+    },
+    update: async (id: string, data: SavedContactUpdate) => {
+      const encrypted = await encryptSavedContactPayload(data);
+      const contact = await fetchAPI<SavedContact>(`/saved-contacts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptSavedContactFields(contact);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/saved-contacts/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    listForItem: (itemId: string) =>
-      fetchAPI<LinkedSavedContact[]>(`/saved-contacts/item/${encodeURIComponent(itemId)}`),
-    link: (itemId: string, savedContactId: string) =>
-      fetchAPI<LinkedSavedContact>(
+    listForItem: async (itemId: string) => {
+      const contacts = await fetchAPI<LinkedSavedContact[]>(`/saved-contacts/item/${encodeURIComponent(itemId)}`);
+      return Promise.all(contacts.map(decryptSavedContactFields));
+    },
+    link: async (itemId: string, savedContactId: string) => {
+      const link = await fetchAPI<LinkedSavedContact>(
         `/saved-contacts/item/${encodeURIComponent(itemId)}`,
         { method: "POST", body: JSON.stringify({ saved_contact_id: savedContactId }) },
-      ),
+      );
+      return decryptSavedContactFields(link);
+    },
     unlink: (itemId: string, linkId: string) =>
       fetchAPI<void>(
         `/saved-contacts/item/${encodeURIComponent(itemId)}/${encodeURIComponent(linkId)}`,
@@ -759,6 +863,7 @@ export interface ItemContact {
   value: string;
   contact_type: string;
   sort_order: number;
+  encryption_version?: number;
   address_line1?: string | null;
   address_line2?: string | null;
   address_city?: string | null;
@@ -773,6 +878,7 @@ export interface ItemContactCreate {
   value?: string;
   contact_type?: string;
   sort_order?: number;
+  encryption_version?: number;
   address_line1?: string | null;
   address_line2?: string | null;
   address_city?: string | null;
@@ -903,6 +1009,7 @@ export interface Person {
   notes: string | null;
   can_login: boolean;
   user_id: string | null;
+  encryption_version?: number;
   status: "none" | "invited" | "active" | "inactive";
   created_at: string;
   updated_at: string;
@@ -918,6 +1025,7 @@ export interface PersonCreate {
   relationship?: string | null;
   notes?: string | null;
   can_login?: boolean;
+  encryption_version?: number;
 }
 
 export interface PersonUpdate {
@@ -930,6 +1038,7 @@ export interface PersonUpdate {
   relationship?: string | null;
   notes?: string | null;
   can_login?: boolean | null;
+  encryption_version?: number;
 }
 
 export interface LinkedPerson {
@@ -942,6 +1051,7 @@ export interface LinkedPerson {
   email: string | null;
   phone: string | null;
   relationship: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -989,6 +1099,7 @@ export interface SavedContact {
   website: string | null;
   address: string | null;
   notes: string | null;
+  encryption_version?: number;
   created_at: string;
   updated_at: string;
 }
@@ -1002,6 +1113,7 @@ export interface SavedContactCreate {
   website?: string | null;
   address?: string | null;
   notes?: string | null;
+  encryption_version?: number;
 }
 
 export interface SavedContactUpdate {
@@ -1013,6 +1125,7 @@ export interface SavedContactUpdate {
   website?: string | null;
   address?: string | null;
   notes?: string | null;
+  encryption_version?: number;
 }
 
 export interface LinkedSavedContact {
@@ -1025,6 +1138,7 @@ export interface LinkedSavedContact {
   email: string | null;
   phone: string | null;
   website: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 

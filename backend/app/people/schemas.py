@@ -21,6 +21,7 @@ class PersonCreate(BaseModel):
     relationship: str | None = None
     notes: str | None = None
     can_login: bool = False
+    encryption_version: int = 1
 
 
 class PersonUpdate(BaseModel):
@@ -33,6 +34,7 @@ class PersonUpdate(BaseModel):
     relationship: str | None = None
     notes: str | None = None
     can_login: bool | None = None
+    encryption_version: int | None = None
 
 
 class PersonOut(BaseModel):
@@ -48,6 +50,7 @@ class PersonOut(BaseModel):
     notes: str | None = None
     can_login: bool = False
     user_id: str | None = None
+    encryption_version: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +89,7 @@ class LinkedPersonOut(BaseModel):
     email: str | None = None
     phone: str | None = None
     relationship: str | None = None
+    encryption_version: int = 1
     created_at: datetime
 
     model_config = {"from_attributes": True}

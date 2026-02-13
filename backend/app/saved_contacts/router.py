@@ -86,6 +86,7 @@ def create_saved_contact(
         website=data.website,
         address=data.address,
         notes=data.notes,
+        encryption_version=data.encryption_version,
     )
     db.add(contact)
     db.commit()
@@ -114,6 +115,9 @@ def update_saved_contact(
         value = getattr(data, field, None)
         if value is not None:
             setattr(contact, field, value)
+
+    if data.encryption_version is not None:
+        contact.encryption_version = data.encryption_version
 
     db.commit()
     db.refresh(contact)
@@ -182,6 +186,7 @@ def list_item_saved_contacts(
                     email=contact.email,
                     phone=contact.phone,
                     website=contact.website,
+                    encryption_version=contact.encryption_version,
                     created_at=link.created_at,
                 )
             )
@@ -239,6 +244,7 @@ def link_saved_contact(
         email=contact.email,
         phone=contact.phone,
         website=contact.website,
+        encryption_version=contact.encryption_version,
         created_at=link.created_at,
     )
 
