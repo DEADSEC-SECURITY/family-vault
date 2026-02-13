@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -18,6 +19,19 @@ class User(Base):
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Zero-knowledge encryption keys
+    encrypted_private_key: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+    public_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kdf_iterations: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=600000
+    )
+    recovery_encrypted_private_key: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

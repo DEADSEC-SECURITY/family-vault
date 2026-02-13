@@ -59,4 +59,32 @@ class OrgMembership(Base):
     )
 
 
+class OrgMemberKey(Base):
+    """Stores an org's AES key wrapped (encrypted) with a member's RSA public key.
+
+    Each member has their own copy of the org key, encrypted with their own
+    public key. Only the member's private key can unwrap it.
+    """
+
+    __tablename__ = "org_member_keys"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    org_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    encrypted_org_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "user_id", name="uq_org_member_key"),
+    )
+
+
 from app.auth.models import User  # noqa: E402, F401

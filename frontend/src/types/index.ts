@@ -1,1 +1,1 @@
-export type { User, AuthResponse, RegisterData, LoginData } from "./user";
+export type { User, AuthResponse, RegisterData, LoginData, PreloginResponse } from "./user";
