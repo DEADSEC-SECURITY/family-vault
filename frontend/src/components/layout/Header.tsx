@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LogOut, Search } from "lucide-react";
+import { KeyRound, LogOut, Search, Shield } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,6 +81,17 @@ export function Header() {
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
             )}
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-gray-100 transition-colors"
+              onClick={() => {
+                setUserMenuOpen(false);
+                router.push("/settings/encryption");
+              }}
+            >
+              <Shield className="h-4 w-4" />
+              Encryption Migration
+            </button>
             <button
               type="button"
               className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-gray-100 transition-colors"
