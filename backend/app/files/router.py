@@ -35,6 +35,7 @@ async def upload_file(
     file: UploadFile = File(...),
     item_id: str = Form(...),
     purpose: str | None = Form(None),
+    encryption_version: int = Form(1),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
@@ -55,24 +56,35 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="File too large (max 25MB)")
 
     mime_type = file.content_type or "application/octet-stream"
-    if mime_type not in ALLOWED_MIME_TYPES:
+    # For client-encrypted files, the MIME type on the upload is application/octet-stream
+    # but we allow it; the original MIME type is passed as 'purpose' or tracked client-side.
+    if encryption_version == 1 and mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"File type not allowed: {mime_type}",
         )
-
-    # Encrypt the file
-    org_key = get_org_encryption_key(org)
-    ciphertext, iv, tag = encrypt_file(content, org_key)
 
     # Generate storage key
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
     short_uuid = str(uuid4())[:8]
     storage_key = f"{org.id}/{item_id}/{purpose or 'file'}_{short_uuid}.{ext}.enc"
 
-    # Upload encrypted bytes to MinIO
     storage = get_storage()
-    storage.upload(ciphertext + tag, storage_key)
+
+    if encryption_version == 2:
+        # Client-side encryption: file is already encrypted by the client
+        storage.upload(content, storage_key)
+        iv_b64 = ""
+        tag_b64 = ""
+        file_size = len(content)
+    else:
+        # Server-side encryption (v1)
+        org_key = get_org_encryption_key(org)
+        ciphertext, iv, tag = encrypt_file(content, org_key)
+        storage.upload(ciphertext + tag, storage_key)
+        iv_b64 = base64.b64encode(iv).decode()
+        tag_b64 = base64.b64encode(tag).decode()
+        file_size = len(content)
 
     # Save metadata
     attachment = FileAttachment(
@@ -80,11 +92,12 @@ async def upload_file(
         uploaded_by=user.id,
         file_name=file.filename or "unnamed",
         storage_key=storage_key,
-        file_size=len(content),
+        file_size=file_size,
         mime_type=mime_type,
         purpose=purpose,
-        encryption_iv=base64.b64encode(iv).decode(),
-        encryption_tag=base64.b64encode(tag).decode(),
+        encryption_iv=iv_b64,
+        encryption_tag=tag_b64,
+        encryption_version=encryption_version,
     )
     db.add(attachment)
     db.commit()
@@ -96,6 +109,7 @@ async def upload_file(
         file_size=attachment.file_size,
         mime_type=attachment.mime_type,
         purpose=attachment.purpose,
+        encryption_version=attachment.encryption_version,
         created_at=attachment.created_at.isoformat(),
     )
 
@@ -117,19 +131,28 @@ def download_file(
     if not attachment:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Download encrypted bytes from MinIO
+    # Download bytes from MinIO
     storage = get_storage()
-    encrypted_data = storage.download(attachment.storage_key)
+    stored_data = storage.download(attachment.storage_key)
 
-    # Decrypt
+    if attachment.encryption_version == 2:
+        # Client-side encryption: return encrypted bytes as-is (client will decrypt)
+        return Response(
+            content=stored_data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{attachment.file_name}"',
+                "X-Encryption-Version": "2",
+            },
+        )
+
+    # Server-side encryption (v1): decrypt before returning
     org_key = get_org_encryption_key(org)
     iv = base64.b64decode(attachment.encryption_iv)
     tag = base64.b64decode(attachment.encryption_tag)
 
-    # The stored data includes ciphertext + tag appended during upload
-    ciphertext = encrypted_data[:-16]
-    stored_tag = encrypted_data[-16:]
-
+    ciphertext = stored_data[:-16]
+    stored_tag = stored_data[-16:]
     plaintext = decrypt_file(ciphertext, iv, stored_tag, org_key)
 
     return Response(

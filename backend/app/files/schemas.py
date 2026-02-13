@@ -9,4 +9,5 @@ class FileUploadResponse(BaseModel):
     file_size: int
     mime_type: str
     purpose: str | None
+    encryption_version: int = 1
     created_at: datetime

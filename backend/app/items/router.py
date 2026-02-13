@@ -42,6 +42,7 @@ def create_item_endpoint(
         name=data.name,
         notes=data.notes,
         fields=data.fields,
+        encryption_version=data.encryption_version,
     )
 
 
@@ -63,7 +64,7 @@ def update_item_endpoint(
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-    return update_item(db, item_id, org_id, data.name, data.notes, data.fields)
+    return update_item(db, item_id, org_id, data.name, data.notes, data.fields, data.encryption_version)
 
 
 @router.delete("/{item_id}", status_code=204)

@@ -26,6 +26,7 @@ class FileAttachment(Base):
     purpose: Mapped[str | None] = mapped_column(String(50), nullable=True)
     encryption_iv: Mapped[str] = mapped_column(String(32), nullable=False)
     encryption_tag: Mapped[str] = mapped_column(String(32), nullable=False)
+    encryption_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

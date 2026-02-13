@@ -23,7 +23,9 @@
  *
  * ENV: NEXT_PUBLIC_API_URL (build-time) — defaults to http://localhost:8000/api
  */
-import { getToken, removeToken } from "./auth";
+import { getToken, getActiveOrgId, removeToken } from "./auth";
+import { keyStore } from "./key-store";
+import { encryptString, decryptString, encryptFile, decryptFile } from "./crypto";
 import type { AuthResponse, LoginData, PreloginResponse, RegisterData, User } from "@/types";
 
 /** Backend API base URL. Set via NEXT_PUBLIC_API_URL env var (build-time). */
@@ -92,6 +94,83 @@ async function fetchAPI<T>(
   return res.json();
 }
 
+// ── Zero-knowledge encryption helpers ─────────────────────────────
+
+/** Get the org key if the user has ZK keys initialized. */
+function getOrgKeyIfAvailable(): Uint8Array | null {
+  const orgId = getActiveOrgId();
+  if (!orgId || !keyStore.isInitialized) return null;
+  try {
+    return keyStore.getOrgKey(orgId);
+  } catch {
+    return null;
+  }
+}
+
+/** Encrypt item fields + notes before sending to server. Returns modified payload. */
+async function encryptItemPayload<T extends { name?: string | null; notes?: string | null; fields?: { field_key: string; field_value: string | null }[]; encryption_version?: number }>(
+  data: T,
+): Promise<T> {
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return data;
+
+  const encrypted: Record<string, unknown> = { ...data, encryption_version: 2 };
+
+  // Encrypt notes
+  if (data.notes) {
+    encrypted.notes = await encryptString(data.notes, orgKey);
+  }
+
+  // Encrypt field values
+  if (data.fields) {
+    encrypted.fields = await Promise.all(
+      data.fields.map(async (f) => ({
+        field_key: f.field_key,
+        field_value: f.field_value ? await encryptString(f.field_value, orgKey) : null,
+      })),
+    );
+  }
+
+  return encrypted as T;
+}
+
+/** Decrypt item response (fields + notes) if client-side encrypted. */
+async function decryptItemResponse(item: Item): Promise<Item> {
+  if (item.encryption_version !== 2) return item;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return item;
+
+  const decrypted: Item = { ...item };
+
+  // Decrypt notes
+  if (item.notes) {
+    try {
+      decrypted.notes = await decryptString(item.notes, orgKey);
+    } catch {
+      // Leave as-is if decryption fails
+    }
+  }
+
+  // Decrypt field values
+  decrypted.fields = await Promise.all(
+    item.fields.map(async (f) => {
+      if (!f.field_value) return f;
+      try {
+        return { ...f, field_value: await decryptString(f.field_value, orgKey) };
+      } catch {
+        return f;
+      }
+    }),
+  );
+
+  return decrypted;
+}
+
+/** Decrypt a list of items. */
+async function decryptItemList(items: Item[]): Promise<Item[]> {
+  return Promise.all(items.map(decryptItemResponse));
+}
+
 export const api = {
   auth: {
     prelogin: (email: string) =>
@@ -152,31 +231,57 @@ export const api = {
     get: (slug: string) => fetchAPI<CategoryDetail>(`/categories/${slug}`),
   },
   items: {
-    list: (params: { category?: string; subcategory?: string; page?: number; limit?: number; include_archived?: boolean }) => {
+    list: async (params: { category?: string; subcategory?: string; page?: number; limit?: number; include_archived?: boolean }) => {
       const qs = new URLSearchParams();
       if (params.category) qs.set("category", params.category);
       if (params.subcategory) qs.set("subcategory", params.subcategory);
       if (params.page) qs.set("page", String(params.page));
       if (params.limit) qs.set("limit", String(params.limit));
       if (params.include_archived) qs.set("include_archived", "true");
-      return fetchAPI<ItemListResponse>(`/items?${qs.toString()}`);
+      const res = await fetchAPI<ItemListResponse>(`/items?${qs.toString()}`);
+      res.items = await decryptItemList(res.items);
+      return res;
     },
-    get: (id: string) => fetchAPI<Item>(`/items/${id}`),
-    create: (data: ItemCreate) =>
-      fetchAPI<Item>("/items", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: ItemUpdate) =>
-      fetchAPI<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    get: async (id: string) => {
+      const item = await fetchAPI<Item>(`/items/${id}`);
+      return decryptItemResponse(item);
+    },
+    create: async (data: ItemCreate) => {
+      const encrypted = await encryptItemPayload(data);
+      const item = await fetchAPI<Item>("/items", { method: "POST", body: JSON.stringify(encrypted) });
+      return decryptItemResponse(item);
+    },
+    update: async (id: string, data: ItemUpdate) => {
+      const encrypted = await encryptItemPayload(data);
+      const item = await fetchAPI<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(encrypted) });
+      return decryptItemResponse(item);
+    },
     delete: (id: string) =>
       fetchAPI<void>(`/items/${id}`, { method: "DELETE" }),
-    renew: (id: string) =>
-      fetchAPI<Item>(`/items/${id}/renew`, { method: "POST" }),
+    renew: async (id: string) => {
+      const item = await fetchAPI<Item>(`/items/${id}/renew`, { method: "POST" });
+      return decryptItemResponse(item);
+    },
   },
   files: {
-    upload: (itemId: string, file: File, purpose?: string) => {
+    upload: async (itemId: string, file: File, purpose?: string) => {
+      const orgKey = getOrgKeyIfAvailable();
       const formData = new FormData();
-      formData.append("file", file);
+
+      if (orgKey) {
+        // Client-side encryption: encrypt file before upload
+        const plainBytes = await file.arrayBuffer();
+        const encryptedBytes = await encryptFile(plainBytes, orgKey);
+        const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+        formData.append("file", encryptedBlob, file.name);
+        formData.append("encryption_version", "2");
+      } else {
+        formData.append("file", file);
+      }
+
       formData.append("item_id", itemId);
       if (purpose) formData.append("purpose", purpose);
+
       return fetchAPI<FileResponse>("/files/upload", {
         method: "POST",
         body: formData,
@@ -184,12 +289,26 @@ export const api = {
       });
     },
     getUrl: (id: string) => `${API_BASE}/files/${id}`,
-    getBlobUrl: async (id: string): Promise<string> => {
+    getBlobUrl: async (id: string, encryptionVersion?: number): Promise<string> => {
       const token = getToken();
       const res = await fetch(`${API_BASE}/files/${id}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`);
+
+      const serverVersion = res.headers.get("X-Encryption-Version");
+      const isClientEncrypted = encryptionVersion === 2 || serverVersion === "2";
+
+      if (isClientEncrypted) {
+        const orgKey = getOrgKeyIfAvailable();
+        if (orgKey) {
+          const encryptedBuf = await res.arrayBuffer();
+          const plainBuf = await decryptFile(encryptedBuf, orgKey);
+          const blob = new Blob([plainBuf]);
+          return URL.createObjectURL(blob);
+        }
+      }
+
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
@@ -220,8 +339,11 @@ export const api = {
       ),
   },
   search: {
-    query: (q: string) =>
-      fetchAPI<ItemListResponse>(`/search?q=${encodeURIComponent(q)}`),
+    query: async (q: string) => {
+      const res = await fetchAPI<ItemListResponse>(`/search?q=${encodeURIComponent(q)}`);
+      res.items = await decryptItemList(res.items);
+      return res;
+    },
   },
   providers: {
     insurance: (q?: string) =>
@@ -487,6 +609,7 @@ export interface FileAttachmentType {
   file_size: number;
   mime_type: string;
   purpose: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
@@ -498,6 +621,7 @@ export interface Item {
   name: string;
   notes: string | null;
   is_archived: boolean;
+  encryption_version?: number;
   fields: FieldValue[];
   files: FileAttachmentType[];
   created_at: string;
@@ -517,12 +641,14 @@ export interface ItemCreate {
   name: string;
   notes?: string | null;
   fields: { field_key: string; field_value: string | null }[];
+  encryption_version?: number;
 }
 
 export interface ItemUpdate {
   name?: string | null;
   notes?: string | null;
   fields?: { field_key: string; field_value: string | null }[];
+  encryption_version?: number;
 }
 
 export interface FileResponse {
@@ -531,6 +657,7 @@ export interface FileResponse {
   file_size: number;
   mime_type: string;
   purpose: string | null;
+  encryption_version?: number;
   created_at: string;
 }
 
