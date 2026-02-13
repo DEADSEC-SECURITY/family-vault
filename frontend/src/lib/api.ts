@@ -171,6 +171,29 @@ async function decryptItemList(items: Item[]): Promise<Item[]> {
   return Promise.all(items.map(decryptItemResponse));
 }
 
+/**
+ * Lazy migration: re-encrypt a v1 (server-side) item as v2 (client-side).
+ * The item is already plaintext (server decrypted it). We encrypt and save in the background.
+ */
+async function maybeMigrateItem(item: Item): Promise<void> {
+  if (item.encryption_version === 2) return;
+  const orgKey = getOrgKeyIfAvailable();
+  if (!orgKey) return;
+
+  const payload = await encryptItemPayload({
+    notes: item.notes,
+    fields: item.fields.map((f) => ({ field_key: f.field_key, field_value: f.field_value })),
+  });
+
+  // Fire-and-forget: silently upgrade encryption in the background
+  fetchAPI(`/items/${item.id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    // Ignore migration failures — will retry next access
+  });
+}
+
 export const api = {
   auth: {
     prelogin: (email: string) =>
@@ -246,7 +269,10 @@ export const api = {
     },
     get: async (id: string) => {
       const item = await fetchAPI<Item>(`/items/${id}`);
-      return decryptItemResponse(item);
+      const decrypted = await decryptItemResponse(item);
+      // Lazy migration: re-encrypt v1 items as v2 in the background
+      maybeMigrateItem(decrypted);
+      return decrypted;
     },
     create: async (data: ItemCreate) => {
       const encrypted = await encryptItemPayload(data);
@@ -342,6 +368,23 @@ export const api = {
   },
   search: {
     query: async (q: string) => {
+      const orgKey = getOrgKeyIfAvailable();
+      if (orgKey) {
+        // ZK mode: fetch all items, decrypt, and search client-side.
+        // Server can't search encrypted v2 data. Family-scale (<500 items) makes this practical.
+        const all = await fetchAPI<ItemListResponse>("/items?limit=500");
+        const decrypted = await decryptItemList(all.items);
+        const lower = q.toLowerCase();
+        const filtered = decrypted.filter((item) => {
+          if (item.name.toLowerCase().includes(lower)) return true;
+          if (item.notes?.toLowerCase().includes(lower)) return true;
+          return item.fields.some(
+            (f) => f.field_value?.toLowerCase().includes(lower),
+          );
+        });
+        return { items: filtered, total: filtered.length, page: 1, limit: 500 };
+      }
+      // Legacy mode: use server-side search
       const res = await fetchAPI<ItemListResponse>(`/search?q=${encodeURIComponent(q)}`);
       res.items = await decryptItemList(res.items);
       return res;
