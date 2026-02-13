@@ -41,6 +41,29 @@ const businessItems: NavItem[] = [
   { href: "/taxes", label: "Taxes", icon: FileText },
 ];
 
+function NavLink({ href, label, icon: Icon, pathname: pn, collapsed: col, exact }: {
+  href: string; label: string; icon: React.ComponentType<{ className?: string }>;
+  pathname: string; collapsed: boolean; exact?: boolean;
+}) {
+  const isActive = exact ? pn === href : (pn === href || pn.startsWith(href + "/"));
+  return (
+    <Link
+      href={href}
+      title={col ? label : undefined}
+      className={cn(
+        "flex items-center rounded-lg text-[13px] font-medium transition-colors",
+        col ? "justify-center p-2" : "gap-3 px-3 py-1.5",
+        isActive
+          ? "bg-blue-50 text-blue-700"
+          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {!col && label}
+    </Link>
+  );
+}
+
 interface SidebarProps {
   collapsed: boolean;
   remindersOpen: boolean;
@@ -61,29 +84,6 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
     keyStore.clear();
     removeToken();
     router.push("/login");
-  }
-
-  function NavLink({ href, label, icon: Icon, pathname: pn, collapsed: col, exact }: {
-    href: string; label: string; icon: React.ComponentType<{ className?: string }>;
-    pathname: string; collapsed: boolean; exact?: boolean;
-  }) {
-    const isActive = exact ? pn === href : (pn === href || pn.startsWith(href + "/"));
-    return (
-      <Link
-        href={href}
-        title={col ? label : undefined}
-        className={cn(
-          "flex items-center rounded-lg text-[13px] font-medium transition-colors",
-          col ? "justify-center p-2" : "gap-3 px-3 py-1.5",
-          isActive
-            ? "bg-blue-50 text-blue-700"
-            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-        )}
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        {!col && label}
-      </Link>
-    );
   }
 
   return (
