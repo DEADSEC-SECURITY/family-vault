@@ -25,6 +25,28 @@ vi.mock("@/lib/auth", () => ({
   setActiveOrgId: vi.fn(),
 }));
 
+// Mock crypto functions — use inline objects since vi.mock is hoisted
+vi.mock("@/lib/crypto", () => ({
+  deriveMasterKey: vi.fn().mockResolvedValue({} as CryptoKey),
+  deriveSymmetricKey: vi.fn().mockResolvedValue({} as CryptoKey),
+  hashMasterPassword: vi.fn().mockResolvedValue("hashed-password"),
+  generateKeyPair: vi.fn().mockResolvedValue({ publicKey: {} as CryptoKey, privateKey: {} as CryptoKey }),
+  exportPublicKey: vi.fn().mockResolvedValue("public-key-b64"),
+  encryptPrivateKey: vi.fn().mockResolvedValue("encrypted-private-key-b64"),
+  importPublicKey: vi.fn().mockResolvedValue({} as CryptoKey),
+  exportRecoveryKey: vi.fn().mockResolvedValue("recovery-key-b64"),
+  encryptPrivateKeyForRecovery: vi.fn().mockResolvedValue("recovery-encrypted-pk"),
+}));
+
+vi.mock("@/lib/key-store", () => ({
+  keyStore: {
+    setMasterKey: vi.fn(),
+    setSymmetricKey: vi.fn(),
+    setPrivateKey: vi.fn(),
+    setPublicKey: vi.fn(),
+  },
+}));
+
 import AcceptInvitePage from "./page";
 import { api } from "@/lib/api";
 const mockValidateInvite = vi.mocked(api.auth.validateInvite);
@@ -68,8 +90,8 @@ describe("AcceptInvitePage", () => {
     });
     expect(screen.getByText("jane@example.com")).toBeInTheDocument();
     expect(screen.getByText(/Doe Family/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Create Password")).toBeInTheDocument();
-    expect(screen.getByLabelText("Confirm Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Create Master Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm Master Password")).toBeInTheDocument();
   });
 
   it("shows error for short password", async () => {
@@ -84,11 +106,11 @@ describe("AcceptInvitePage", () => {
     render(<AcceptInvitePage />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Create Password")).toBeInTheDocument();
+      expect(screen.getByLabelText("Create Master Password")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText("Create Password"), "short");
-    await user.type(screen.getByLabelText("Confirm Password"), "short");
+    await user.type(screen.getByLabelText("Create Master Password"), "short");
+    await user.type(screen.getByLabelText("Confirm Master Password"), "short");
     await user.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
     expect(screen.getByText("Password must be at least 8 characters")).toBeInTheDocument();
@@ -106,17 +128,17 @@ describe("AcceptInvitePage", () => {
     render(<AcceptInvitePage />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Create Password")).toBeInTheDocument();
+      expect(screen.getByLabelText("Create Master Password")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText("Create Password"), "password123");
-    await user.type(screen.getByLabelText("Confirm Password"), "different123");
+    await user.type(screen.getByLabelText("Create Master Password"), "password123");
+    await user.type(screen.getByLabelText("Confirm Master Password"), "different123");
     await user.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
     expect(screen.getByText("Passwords do not match")).toBeInTheDocument();
   });
 
-  it("redirects to dashboard on successful accept", async () => {
+  it("shows recovery key on successful accept, then redirects on confirmation", async () => {
     mockValidateInvite.mockResolvedValue({
       valid: true,
       email: "jane@example.com",
@@ -130,6 +152,7 @@ describe("AcceptInvitePage", () => {
         email: "jane@example.com",
         full_name: "Jane Doe",
         active_org_id: "org-1",
+        created_at: "2024-01-01T00:00:00Z",
       },
     });
 
@@ -137,19 +160,32 @@ describe("AcceptInvitePage", () => {
     render(<AcceptInvitePage />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Create Password")).toBeInTheDocument();
+      expect(screen.getByLabelText("Create Master Password")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText("Create Password"), "password123");
-    await user.type(screen.getByLabelText("Confirm Password"), "password123");
+    await user.type(screen.getByLabelText("Create Master Password"), "password123");
+    await user.type(screen.getByLabelText("Confirm Master Password"), "password123");
     await user.click(screen.getByRole("button", { name: "Accept Invitation" }));
 
+    // Should show recovery key screen
     await waitFor(() => {
-      expect(mockAcceptInvite).toHaveBeenCalledWith({
-        token: "valid-token",
-        password: "password123",
-      });
+      expect(screen.getByText("Save Your Recovery Key")).toBeInTheDocument();
     });
+    expect(screen.getByText("recovery-key-b64")).toBeInTheDocument();
+
+    // API should have been called with ZK fields
+    expect(mockAcceptInvite).toHaveBeenCalledWith({
+      token: "valid-token",
+      password: "zero-knowledge",
+      master_password_hash: "hashed-password",
+      encrypted_private_key: "encrypted-private-key-b64",
+      public_key: "public-key-b64",
+      recovery_encrypted_private_key: "recovery-encrypted-pk",
+      kdf_iterations: 600000,
+    });
+
+    // Click to proceed to dashboard
+    await user.click(screen.getByRole("button", { name: /saved my recovery key/i }));
     expect(mockPush).toHaveBeenCalledWith("/dashboard");
   });
 

@@ -103,3 +103,11 @@ class OrgKeyExchange(BaseModel):
     """Payload for sharing an org key with a user."""
     user_id: str
     encrypted_org_key: str  # org key wrapped with target user's public key
+
+
+class PendingKeyMember(BaseModel):
+    """A member who needs the org key wrapped for them (key ceremony)."""
+    user_id: str
+    email: str
+    full_name: str
+    public_key: str

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { removeToken, getStoredUser } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 
 export function Header() {
@@ -34,6 +35,7 @@ export function Header() {
     } catch {
       // ignore
     }
+    keyStore.clear();
     removeToken();
     router.push("/login");
   }

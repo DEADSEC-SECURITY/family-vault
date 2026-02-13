@@ -9,6 +9,7 @@ from app.auth.schemas import (
     ForgotPasswordRequest,
     InviteValidation,
     OrgKeyExchange,
+    PendingKeyMember,
     PreloginRequest,
     PreloginResponse,
     ResetPasswordRequest,
@@ -35,8 +36,8 @@ from app.invitations.service import (
     validate_invite_token,
     validate_reset_token,
 )
-from app.orgs.models import OrgMemberKey, Organization
-from app.orgs.service import create_organization, get_user_orgs
+from app.orgs.models import OrgMemberKey, OrgMembership, Organization
+from app.orgs.service import create_organization, get_active_org_id, get_user_orgs
 from app.people.models import Person
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -226,8 +227,6 @@ def store_org_key(
     Called by an existing org member who wraps the org key with the
     target user's public key.
     """
-    from app.orgs.service import get_active_org_id
-
     # Verify caller belongs to this org
     caller_org_id = get_active_org_id(user, db)
     if caller_org_id != org_id:
@@ -294,6 +293,53 @@ def get_user_public_key(
         raise HTTPException(status_code=404, detail="Public key not found")
 
     return {"public_key": target.public_key}
+
+
+@router.get("/org/{org_id}/pending-keys", response_model=list[PendingKeyMember])
+def get_pending_key_members(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """List org members who have a public key but no wrapped org key yet.
+
+    These members need the key ceremony: an existing member must wrap
+    the org key with each pending member's RSA public key.
+    """
+    from sqlalchemy import and_
+
+    caller_org_id = get_active_org_id(user, db)
+    if caller_org_id != org_id:
+        raise HTTPException(status_code=403, detail="Not a member of this org")
+
+    members_with_keys = (
+        db.query(OrgMemberKey.user_id)
+        .filter(OrgMemberKey.org_id == org_id)
+        .subquery()
+    )
+
+    pending = (
+        db.query(User)
+        .join(OrgMembership, and_(
+            OrgMembership.user_id == User.id,
+            OrgMembership.org_id == org_id,
+        ))
+        .filter(
+            User.public_key.isnot(None),
+            User.id.notin_(members_with_keys),
+        )
+        .all()
+    )
+
+    return [
+        PendingKeyMember(
+            user_id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            public_key=u.public_key,
+        )
+        for u in pending
+    ]
 
 
 # ── Invitation acceptance (public — no auth) ────────────────────

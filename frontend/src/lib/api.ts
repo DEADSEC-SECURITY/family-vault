@@ -225,6 +225,8 @@ export const api = {
       fetchAPI<{ encrypted_org_key: string }>(`/auth/org/${encodeURIComponent(orgId)}/my-key`),
     getUserPublicKey: (userId: string) =>
       fetchAPI<{ public_key: string }>(`/auth/user/${encodeURIComponent(userId)}/public-key`),
+    getPendingKeys: (orgId: string) =>
+      fetchAPI<PendingKeyMember[]>(`/auth/org/${encodeURIComponent(orgId)}/pending-keys`),
   },
   categories: {
     list: () => fetchAPI<CategoryListItem[]>("/categories"),
@@ -989,6 +991,13 @@ export interface InviteValidation {
   email: string | null;
   full_name: string | null;
   org_name: string | null;
+}
+
+export interface PendingKeyMember {
+  user_id: string;
+  email: string;
+  full_name: string;
+  public_key: string;
 }
 
 export { ApiError };
