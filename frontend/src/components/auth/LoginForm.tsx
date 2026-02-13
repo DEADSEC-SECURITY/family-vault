@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { setToken, setStoredUser, setActiveOrgId } from "@/lib/auth";
+import { setToken, setStoredUser, setActiveOrgId, updateStoredUser } from "@/lib/auth";
 import { keyStore } from "@/lib/key-store";
 import {
   deriveMasterKey,
@@ -39,7 +39,7 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      // 1. Pre-login: get KDF iterations and ZK status for this email
+      // Pre-login: get KDF iterations and ZK status for this email
       const prelogin = await api.auth.prelogin(email);
 
       let res;
@@ -94,6 +94,13 @@ export function LoginForm() {
           setActiveOrgId(res.user.active_org_id);
         }
       }
+
+      // Check for pending encryption migrations (non-blocking)
+      api.migration.pending().then((s) => {
+        if (s.items_v1 > 0 || s.files_v1 > 0) {
+          updateStoredUser({ migration_items_v1: s.items_v1, migration_files_v1: s.files_v1 });
+        }
+      }).catch(() => {});
 
       router.push("/dashboard");
     } catch (err) {

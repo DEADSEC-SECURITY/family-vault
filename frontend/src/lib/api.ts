@@ -691,8 +691,16 @@ export const api = {
   },
 
   migration: {
-    status: () =>
-      fetchAPI<MigrationStatus>("/items/migration/status"),
+    pending: async () => await fetchAPI<MigrationStatus>("/items/migration/status"),
+
+    status: async (): Promise<boolean> => {
+      const status = await api.migration.pending();
+      if (status.items_v1 > 0 || status.files_v1 > 0) {
+        return false;
+      } else {
+        return true;
+        }
+    },
 
     /**
      * Bulk-migrate all v1 items to v2 client-side encryption.

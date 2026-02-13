@@ -87,26 +87,26 @@ function AcceptInviteContent() {
     try {
       const email = invite!.email!;
 
-      // 1. Derive master key
+      // Derive master key
       const masterKey = await deriveMasterKey(password, email);
 
-      // 2. Derive symmetric key and master password hash
+      // Derive symmetric key and master password hash
       const symmetricKey = await deriveSymmetricKey(masterKey);
       const masterPasswordHash = await hashMasterPassword(masterKey, password);
 
-      // 3. Generate RSA keypair
+      // Generate RSA keypair
       const keyPair = await generateKeyPair();
       const publicKeyB64 = await exportPublicKey(keyPair.publicKey);
       const encryptedPrivateKeyB64 = await encryptPrivateKey(keyPair.privateKey, symmetricKey);
 
-      // 4. Generate recovery key and encrypt private key for recovery
+      // Generate recovery key and encrypt private key for recovery
       const recoveryKeyB64 = await exportRecoveryKey(masterKey);
       const recoveryEncryptedPrivateKey = await encryptPrivateKeyForRecovery(
         keyPair.privateKey,
         recoveryKeyB64,
       );
 
-      // 5. Accept invitation with ZK data
+      // Accept invitation with ZK data
       const res = await api.auth.acceptInvite({
         token,
         password: "zero-knowledge",
@@ -117,14 +117,14 @@ function AcceptInviteContent() {
         kdf_iterations: 600000,
       });
 
-      // 6. Store session
+      // Store session
       setToken(res.token);
       setStoredUser(res.user);
       if (res.user.active_org_id) {
         setActiveOrgId(res.user.active_org_id);
       }
 
-      // 7. Initialize keyStore
+      // Initialize keyStore
       const publicKey = await importPublicKey(publicKeyB64);
       keyStore.setMasterKey(masterKey);
       keyStore.setSymmetricKey(symmetricKey);
@@ -133,7 +133,7 @@ function AcceptInviteContent() {
 
       // Note: no org key yet — existing member must perform key ceremony
 
-      // 8. Show recovery key
+      // Show recovery key
       setRecoveryKey(recoveryKeyB64);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to accept invitation");

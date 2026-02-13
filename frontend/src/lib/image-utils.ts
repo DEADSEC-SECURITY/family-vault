@@ -9,14 +9,14 @@
  *   createFileFromBlob(blob, name)             — wraps a Blob as a File for upload
  *
  * AUTO-DETECT ALGORITHM (detectCardBounds):
- *   1. Load image → grayscale → double Gaussian blur (5×5 kernel)
- *   2. Sobel edge detection (gradient magnitude)
- *   3. Build integral image (summed area table) for O(1) rectangle sums
- *   4. Coarse scan: test ~30 candidate rectangles across the image
- *   5. Fine scan: refine top candidates with smaller step sizes
- *   6. Score by min-side emphasis (all 4 borders must have edges)
- *   7. Transform bounds for current rotation (0°/90°/180°/270°)
- *   8. Optional debug canvas with edge visualization + green rectangle overlay
+ *   Load image → grayscale → double Gaussian blur (5×5 kernel)
+ *   Sobel edge detection (gradient magnitude)
+ *   Build integral image (summed area table) for O(1) rectangle sums
+ *   Coarse scan: test ~30 candidate rectangles across the image
+ *   Fine scan: refine top candidates with smaller step sizes
+ *   Score by min-side emphasis (all 4 borders must have edges)
+ *   Transform bounds for current rotation (0°/90°/180°/270°)
+ *   Optional debug canvas with edge visualization + green rectangle overlay
  *
  * DEBUG: Set NEXT_PUBLIC_DEBUG_DETECT="true" to show debug panel in ImageEditor.
  */
@@ -72,7 +72,7 @@ export async function getCroppedImage(
 ): Promise<Blob> {
   const image = await loadImage(imageSrc);
 
-  // Step 1: Draw the rotated image onto an intermediate canvas
+  // Draw the rotated image onto an intermediate canvas
   const rotatedSize = getRotatedSize(image.naturalWidth, image.naturalHeight, rotation);
   const rotCanvas = document.createElement("canvas");
   rotCanvas.width = Math.round(rotatedSize.width);
@@ -83,7 +83,7 @@ export async function getCroppedImage(
   rotCtx.rotate((rotation * Math.PI) / 180);
   rotCtx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
 
-  // Step 2: Crop from the rotated canvas
+  // Crop from the rotated canvas
   const cropCanvas = document.createElement("canvas");
   cropCanvas.width = Math.round(cropAreaPixels.width);
   cropCanvas.height = Math.round(cropAreaPixels.height);
@@ -101,7 +101,7 @@ export async function getCroppedImage(
     Math.round(cropAreaPixels.height),
   );
 
-  // Step 3: Export as JPEG blob
+  // Export as JPEG blob
   return new Promise((resolve, reject) => {
     cropCanvas.toBlob(
       (blob) => {
@@ -176,17 +176,17 @@ export async function detectCardBounds(
   const imageData = ctx.getImageData(0, 0, w, h);
   const { data } = imageData;
 
-  // ── Step 1: grayscale ──
+  // ── Grayscale ──
   const grayRaw = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     grayRaw[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
   }
 
-  // ── Step 1b: Gaussian blur to suppress texture noise (carpet, wood grain, text) ──
+  // ── Gaussian blur to suppress texture noise (carpet, wood grain, text) ──
   // Use a 5x5 Gaussian kernel (sigma ≈ 1.4) applied twice for stronger smoothing
   const gray = gaussianBlur(gaussianBlur(grayRaw, w, h), w, h);
 
-  // ── Step 2: Sobel edge magnitudes ──
+  // ── Sobel edge magnitudes ──
   const edges = new Float32Array(w * h);
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
@@ -204,7 +204,7 @@ export async function detectCardBounds(
     }
   }
 
-  // ── Step 3: Score candidate rectangles by edge alignment ──
+  // ── Score candidate rectangles by edge alignment ──
   //
   // Key insight: a card's 4 edges will show up as *individual* strong lines
   // in the Sobel output.  We score each candidate rectangle by checking
@@ -351,7 +351,7 @@ export async function detectCardBounds(
   // ── Build debug info if requested ──
   let debugInfo: DetectDebugInfo | undefined;
   if (debug) {
-    // 0. Blurred grayscale visualization
+    // Blurred grayscale visualization
     const blurCanvas = document.createElement("canvas");
     blurCanvas.width = w;
     blurCanvas.height = h;
@@ -366,7 +366,7 @@ export async function detectCardBounds(
     }
     blurCtx.putImageData(blurImgData, 0, 0);
 
-    // 1. Edge magnitude visualization
+    // Edge magnitude visualization
     const edgeCanvas = document.createElement("canvas");
     edgeCanvas.width = w;
     edgeCanvas.height = h;
@@ -385,7 +385,7 @@ export async function detectCardBounds(
     }
     edgeCtx.putImageData(edgeImgData, 0, 0);
 
-    // 2. Result overlay — draw best rect on the rotated image
+    // Result overlay — draw best rect on the rotated image
     const resultCanvas = document.createElement("canvas");
     resultCanvas.width = w;
     resultCanvas.height = h;

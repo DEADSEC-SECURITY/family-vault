@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { MigrationStatus } from "@/lib/api";
+import { updateStoredUser } from "@/lib/auth";
 
 export default function EncryptionMigrationPage() {
   const [status, setStatus] = useState<MigrationStatus | null>(null);
@@ -18,8 +19,11 @@ export default function EncryptionMigrationPage() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const s = await api.migration.status();
+      const s = await api.migration.pending();
       setStatus(s);
+      if (s.items_v1 === 0 && s.files_v1 === 0) {
+        updateStoredUser({ migration_items_v1: 0, migration_files_v1: 0 });
+      }
     } catch {
       setError("Failed to fetch migration status");
     } finally {

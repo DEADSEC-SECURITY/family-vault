@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Shield } from "lucide-react";
-import { api } from "@/lib/api";
-import { keyStore } from "@/lib/key-store";
+import { getStoredUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,24 +23,17 @@ export function MigrationPrompt() {
   const [v1Files, setV1Files] = useState(0);
 
   useEffect(() => {
-    // Only check for ZK users who have keys loaded
-    if (!keyStore.isInitialized) return;
-
     // Don't show again if dismissed this session
     if (sessionStorage.getItem(DISMISSED_KEY)) return;
 
-    api.migration
-      .status()
-      .then((s) => {
-        if (s.items_v1 > 0 || s.files_v1 > 0) {
-          setV1Items(s.items_v1);
-          setV1Files(s.files_v1);
-          setOpen(true);
-        }
-      })
-      .catch(() => {
-        // Silently ignore — don't block the app
-      });
+    const user = getStoredUser();
+    const items = user?.migration_items_v1 ?? 0;
+    const files = user?.migration_files_v1 ?? 0;
+    if (items > 0 || files > 0) {
+      setV1Items(items);
+      setV1Files(files);
+      setOpen(true);
+    }
   }, []);
 
   function handleDismiss() {

@@ -74,43 +74,43 @@ export function RegisterForm() {
     setLoading(true);
 
     try {
-      // 1. Derive master key from password + email
+      // Derive master key from password + email
       const masterKey = await deriveMasterKey(
         password,
         email,
         CRYPTO_CONSTANTS.KDF_ITERATIONS,
       );
 
-      // 2. Derive symmetric key from master key
+      // Derive symmetric key from master key
       const symmetricKey = await deriveSymmetricKey(masterKey);
 
-      // 3. Compute master password hash (this is what server stores)
+      // Compute master password hash (this is what server stores)
       const masterPasswordHash = await hashMasterPassword(masterKey, password);
 
-      // 4. Generate RSA keypair
+      // Generate RSA keypair
       const keyPair = await generateKeyPair();
 
-      // 5. Export public key
+      // Export public key
       const publicKeyB64 = await exportPublicKey(keyPair.publicKey);
 
-      // 6. Encrypt private key with symmetric key
+      // Encrypt private key with symmetric key
       const encryptedPrivateKey = await encryptPrivateKey(
         keyPair.privateKey,
         symmetricKey,
       );
 
-      // 7. Generate org key and wrap it with the user's public key
+      // Generate org key and wrap it with the user's public key
       const orgKey = generateOrgKey();
       const encryptedOrgKey = await wrapOrgKey(orgKey, keyPair.publicKey);
 
-      // 8. Generate recovery key and encrypt private key for recovery
+      // Generate recovery key and encrypt private key for recovery
       const recoveryKeyB64 = await exportRecoveryKey(masterKey);
       const recoveryEncryptedPrivateKey = await encryptPrivateKeyForRecovery(
         keyPair.privateKey,
         recoveryKeyB64,
       );
 
-      // 9. Register with the server (server never sees password or master key)
+      // Register with the server (server never sees password or master key)
       const res = await api.auth.register({
         email,
         password: "zero-knowledge", // placeholder — server uses master_password_hash
@@ -123,7 +123,7 @@ export function RegisterForm() {
         kdf_iterations: CRYPTO_CONSTANTS.KDF_ITERATIONS,
       });
 
-      // 10. Store keys in memory
+      // Store keys in memory
       keyStore.setMasterKey(masterKey);
       keyStore.setSymmetricKey(symmetricKey);
       keyStore.setPrivateKey(keyPair.privateKey);
@@ -132,7 +132,7 @@ export function RegisterForm() {
         keyStore.setOrgKey(res.user.active_org_id, orgKey);
       }
 
-      // 11. Show recovery key before completing registration
+      // Show recovery key before completing registration
       setRecoveryKey(recoveryKeyB64);
       setPendingRegData({
         token: res.token,
