@@ -19,7 +19,7 @@ Family Vault is a secure, self-hosted digital vault that helps families organize
 - **🏥 Insurance Tracking** - Health, auto, home, and life insurance with coverage details and reminders
 - **💼 Business Documents** - LLCs, corporations, licenses, tax documents
 - **🔔 Smart Reminders** - Automatic expiration tracking and custom reminder system with email notifications
-- **🔐 Military-Grade Encryption** - AES-256-GCM envelope encryption for all uploaded files
+- **🔐 Zero-Knowledge Encryption** - Client-side AES-256-GCM encryption; server never sees plaintext
 - **👥 Multi-User Organizations** - Share access with family members with role-based permissions
 - **🌍 Visa Management** - Track visas with automatic country-specific help contact information
 - **📎 File Attachments** - Securely store card images and documents with built-in image editing
@@ -93,8 +93,8 @@ All services run in Docker containers and can be easily deployed together or sca
 | ORM | SQLAlchemy 2.0 |
 | Migrations | Alembic |
 | File Storage | MinIO (S3-compatible) |
-| Authentication | Session-based (bcrypt) |
-| Encryption | AES-256-GCM envelope encryption |
+| Authentication | Zero-knowledge (PBKDF2 + bcrypt) |
+| Encryption | Client-side AES-256-GCM + RSA-OAEP key wrapping |
 | Email | SMTP (optional, for reminders) |
 
 ## Configuration
@@ -146,20 +146,22 @@ Then remove the `postgres` and `minio` services from `docker-compose.yml`.
 
 ## Security
 
-### File Encryption
+### Zero-Knowledge Encryption
 
-All uploaded files are encrypted at rest using AES-256-GCM:
+Family Vault uses a zero-knowledge architecture — the server never sees your plaintext data:
 
-1. **Server Master Key** - Derived from `SECRET_KEY` environment variable
-2. **Organization Keys** - Each organization gets a unique encryption key
-3. **File-Specific Keys** - Each file is encrypted with a unique data encryption key (DEK)
-4. **Zero-Knowledge Storage** - Even if someone accesses your MinIO bucket directly, files are unreadable encrypted blobs
+1. **Client-Side Key Derivation** - Your master password is used to derive encryption keys entirely in your browser (PBKDF2, 600k iterations)
+2. **RSA Key Pairs** - Each user gets an RSA-OAEP 2048-bit keypair; the private key is encrypted with your master password
+3. **Organization Keys** - AES-256-GCM org keys are wrapped with each member's RSA public key
+4. **Client-Side Encryption** - All item fields and files are encrypted/decrypted in the browser before being sent to the server
+5. **Zero-Knowledge Storage** - The server stores only encrypted blobs — even a compromised server cannot read your data
 
 ### Authentication
 
-- Password hashing with bcrypt (12 rounds)
+- Zero-knowledge auth: server only receives a hash-of-hash (never your password or master key)
+- Password verification with bcrypt (12 rounds) on the master password hash
 - Session-based authentication with opaque tokens
-- Session tokens expire after 30 days of inactivity
+- Session tokens expire after 72 hours of inactivity
 - All API endpoints require authentication
 
 ### Best Practices
@@ -241,8 +243,8 @@ Each item has a full detail view with editable fields, file upload slots, linked
 
 ### Prerequisites
 
-- Node.js 22+
-- Python 3.13+
+- Node.js 20+
+- Python 3.12+
 - Docker and Docker Compose
 
 ### Local Development Setup
@@ -319,7 +321,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 - [ ] Mobile apps (iOS/Android)
 - [ ] Document OCR for automatic field extraction
 - [ ] Shared item permissions (granular access control)
-- [ ] Audit log for all changes
+- [x] Audit log for all changes
 - [ ] Export/import functionality
 - [ ] Two-factor authentication
 - [ ] API key authentication for automation
