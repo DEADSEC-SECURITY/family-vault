@@ -659,6 +659,27 @@ CATEGORIES = {
             },
         },
     },
+    "security_codes": {
+        "label": "Security Codes",
+        "icon": "key-round",
+        "slug": "security_codes",
+        "subcategories": {
+            "backup_codes": {
+                "label": "2FA Backup Codes",
+                "icon": "key-round",
+                "fields": [
+                    {"key": "service_name", "label": "Service / App", "type": "text", "required": True},
+                    {"key": "account", "label": "Account (username or email)", "type": "text", "required": False},
+                    {"key": "codes", "label": "Backup Codes", "type": "textarea", "required": True, "encrypted": True},
+                    {"key": "total_codes", "label": "Total Codes", "type": "number", "required": False},
+                    {"key": "codes_remaining", "label": "Codes Remaining", "type": "number", "required": False},
+                    {"key": "date_generated", "label": "Date Generated", "type": "date", "required": False},
+                ],
+                "file_slots": ["screenshot"],
+                "recommended": True,
+            },
+        },
+    },
 }
 
 # Date field keys that trigger reminders when approaching expiration
