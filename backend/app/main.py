@@ -122,7 +122,7 @@ def _start_scheduler():
 async def lifespan(app: FastAPI):
     # Startup: import models so they're registered
     from app.auth.models import Session, User  # noqa: F401
-    from app.orgs.models import OrgMembership, Organization  # noqa: F401
+    from app.orgs.models import OrgMembership, OrgMemberKey, Organization  # noqa: F401
     from app.items.models import Item, ItemFieldValue  # noqa: F401
     from app.files.models import FileAttachment  # noqa: F401
     from app.reminders.models import CustomReminder  # noqa: F401
