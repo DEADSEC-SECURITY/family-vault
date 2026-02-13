@@ -32,7 +32,7 @@ Family Vault is a full-stack web application built with:
                      │
 ┌────────────────────▼────────────────────────────────────────┐
 │                      Frontend Service                        │
-│                    Next.js 16 (Port 3000)                   │
+│                    Next.js 15 (Port 3000)                   │
 │   • Server-side rendering                                   │
 │   • Static page generation                                   │
 │   • API route handling                                       │
@@ -111,12 +111,7 @@ backend/
 │   ├── visas/                  # Visa types & contacts database
 │   ├── search/                 # Full-text search
 │   ├── dashboard/              # Dashboard stats
-│   ├── email/                  # SMTP email service
-│   ├── audit/                  # Audit logging
-│   ├── invitations/            # Org invitation management
-│   ├── business_reminders/     # Business-specific reminders
-│   ├── item_links/             # Parent-child item linking
-│   └── saved_contacts/         # Reusable contact templates
+│   └── email/                  # SMTP email service
 │
 └── alembic/                    # Database migrations
     ├── versions/               # Migration scripts
@@ -226,8 +221,7 @@ frontend/
     │   │
     │   ├── (auth)/                   # Auth route group
     │   │   ├── login/page.tsx
-    │   │   ├── register/page.tsx
-    │   │   └── accept-invite/page.tsx
+    │   │   └── register/page.tsx
     │   │
     │   └── (app)/                    # Authenticated route group
     │       ├── layout.tsx            # Sidebar + header layout
@@ -271,9 +265,7 @@ frontend/
     │
     └── lib/
         ├── api.ts                    # API client + types
-        ├── auth.ts                   # Auth helpers (token/user storage)
-        ├── crypto.ts                 # Web Crypto API (PBKDF2, RSA, AES-GCM)
-        ├── key-store.ts              # In-memory key singleton
+        ├── auth.ts                   # Auth helpers
         ├── format.ts                 # Shared formatting utilities
         ├── utils.ts                  # General utilities (cn)
         └── image-utils.ts            # Image processing
@@ -283,7 +275,7 @@ frontend/
 
 #### 1. Server Components by Default
 
-Next.js 16 App Router uses React Server Components:
+Next.js 15 App Router uses React Server Components:
 
 ```tsx
 // app/(app)/dashboard/page.tsx
@@ -382,25 +374,21 @@ function handleFieldChange(key, value) {
 ### Core Tables
 
 ```sql
--- Users & Authentication (ZK fields)
-users (id, email, password_hash, full_name, encrypted_private_key,
-       public_key, kdf_iterations, recovery_encrypted_private_key, created_at)
+-- Users & Authentication
+users (id, email, password_hash, full_name, created_at)
 sessions (id, user_id, token, expires_at)
 
 -- Organizations (multi-user support)
 organizations (id, name, encryption_key_enc, created_by, created_at)
 org_memberships (id, org_id, user_id, role)  -- role: owner/admin/member/viewer
-org_member_keys (id, org_id, user_id, encrypted_org_key)  -- RSA-wrapped org keys
 
 -- Items (main data model)
-items (id, org_id, created_by, category, subcategory, name, encrypted_name, notes,
-       is_archived, encryption_version, created_at)
+items (id, org_id, created_by, category, subcategory, name, notes, is_archived, created_at)
 item_field_values (id, item_id, field_key, field_value, field_type)  -- EAV pattern
 
 -- Files
 file_attachments (id, item_id, uploaded_by, file_name, storage_key, file_size,
-                  mime_type, purpose, encryption_iv, encryption_tag,
-                  encryption_version, created_at)
+                  mime_type, purpose, encryption_iv, encryption_tag, created_at)
 
 -- Reminders
 custom_reminders (id, item_id, org_id, created_by, title, remind_date, note,
@@ -421,9 +409,6 @@ vehicles (id, org_id, name, license_plate, vin)
 item_vehicles (id, item_id, vehicle_id, org_id)  -- junction table
 
 people (id, org_id, first_name, last_name, email, phone, relationship)
-
--- Audit
-audit_logs (id, org_id, user_id, action, resource_type, resource_id, details, created_at)
 ```
 
 ### Relationships
@@ -438,96 +423,99 @@ Item (1) → (N) ItemContacts
 Item (N) ← (junction) → (N) Vehicles
 ```
 
-## Encryption
+## File Encryption
 
-### Zero-Knowledge Architecture
+### Envelope Encryption Architecture
 
-Family Vault uses a zero-knowledge encryption model where the server never sees plaintext data. All encryption and decryption happens client-side using the Web Crypto API.
-
-### Key Hierarchy
+Family Vault uses multi-layer encryption for maximum security:
 
 ```
-User Password
-    ├─► PBKDF2(600k iter, salt=email) ──► Master Key (256-bit)
-    │       ├─► HKDF("enc") ──► Symmetric Key (encrypts RSA private key)
-    │       └─► HKDF("mac") ──► MAC Key (future use)
-    └─► PBKDF2(masterKey, password, 1 iter) ──► Master Password Hash (sent to server)
-
-Per-User RSA-OAEP Keypair (2048-bit):
-    ├─► Public key: stored plaintext on server
-    └─► Private key: encrypted with Symmetric Key, stored on server
-
-Org Key (AES-256-GCM, 256-bit):
-    └─► Wrapped with each member's RSA public key → stored in org_member_keys
+┌────────────────────────────────────────────────────────────┐
+│ 1. SERVER MASTER KEY (derived from SECRET_KEY env var)    │
+│    • Used via HKDF-SHA256                                  │
+│    • Never stored in database                              │
+│    • Same across all orgs                                  │
+└─────────────────┬──────────────────────────────────────────┘
+                  │ encrypts
+                  ▼
+┌────────────────────────────────────────────────────────────┐
+│ 2. ORG ENCRYPTION KEYS (one per organization)             │
+│    • Random 256-bit keys                                   │
+│    • Encrypted with server master key                      │
+│    • Stored in organizations.encryption_key_enc            │
+└─────────────────┬──────────────────────────────────────────┘
+                  │ derives
+                  ▼
+┌────────────────────────────────────────────────────────────┐
+│ 3. FILE DATA ENCRYPTION KEYS (one per file)               │
+│    • Derived from org key + random IV                      │
+│    • Not stored (regenerated from IV + org key)            │
+│    • Used with AES-256-GCM                                 │
+└─────────────────┬──────────────────────────────────────────┘
+                  │ encrypts
+                  ▼
+┌────────────────────────────────────────────────────────────┐
+│ 4. ENCRYPTED FILE BLOBS (stored in MinIO/S3)              │
+│    • Unreadable without org key + IV + auth tag           │
+│    • IV stored in file_attachments.encryption_iv           │
+│    • Auth tag in file_attachments.encryption_tag           │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### Client-Side Encryption Flow
+### Encryption Flow
 
-**Item Fields**: Encrypted with the org key (AES-256-GCM) in the browser before being sent to the server. Decrypted client-side on retrieval.
-
-**File Upload**:
-```
-1. User selects file in browser
-2. Browser encrypts file with org key (AES-256-GCM, random IV)
-3. Encrypted blob is uploaded to server → stored in MinIO
-4. IV + auth tag stored in database
-```
-
-**File Download**:
-```
-1. Browser fetches encrypted blob from server
-2. Browser decrypts with org key + stored IV/tag
-3. Plaintext displayed to user
+**Upload**:
+```python
+1. User uploads file via /api/files/upload
+2. Backend fetches org's encrypted key from database
+3. Backend decrypts org key using server master key
+4. Backend generates random IV (12 bytes)
+5. Backend encrypts file using AES-256-GCM:
+   - Key: derived from org key + IV
+   - Output: ciphertext + authentication tag
+6. Backend uploads ciphertext to MinIO
+7. Backend stores IV + tag in database
 ```
 
-### Key Ceremony (Org Key Sharing)
-
-When a new member joins an organization:
-1. New member generates RSA keypair on registration/invite acceptance
-2. Existing member fetches new member's public key
-3. Existing member wraps the org key with the new member's RSA public key
-4. Wrapped key is stored in `org_member_keys`
-5. New member unwraps org key with their private key on login
-
-### Legacy Server-Side Encryption (v1)
-
-Older items/files may use server-side encryption (encryption_version=1). These use an envelope encryption scheme with a server master key derived from `SECRET_KEY` via HKDF. Items are lazily migrated to client-side encryption (v2) as they are accessed.
+**Download**:
+```python
+1. User requests /api/files/{file_id}
+2. Backend verifies user owns the org that owns the item
+3. Backend fetches encrypted file from MinIO
+4. Backend fetches IV + tag from database
+5. Backend decrypts org key using server master key
+6. Backend decrypts file using AES-256-GCM
+7. Backend streams plaintext to user
+```
 
 ### Security Properties
 
-- **Zero-knowledge** — server stores only encrypted blobs; cannot read user data
-- **Per-file keys** — each file gets a unique IV; compromising one doesn't expose others
-- **Authenticated encryption** — GCM mode prevents tampering
-- **Key separation** — org key compromise doesn't reveal master passwords
-- **Multi-user support** — org key is shared via RSA key wrapping per member
+✅ **Zero-knowledge storage** - MinIO/S3 bucket contains only encrypted blobs
+✅ **Per-file keys** - Compromising one file doesn't expose others
+✅ **Authenticated encryption** - GCM mode prevents tampering
+✅ **Forward secrecy** - Rotating SECRET_KEY forces re-encryption of org keys
+✅ **Multi-user support** - Org key is shared, not per-user
 
 ## Authentication & Authorization
 
-### Zero-Knowledge Auth
-
-The server never sees the user's raw password or master key.
+### Session-Based Auth
 
 1. **Registration**:
    ```
-   Browser: derive masterKey = PBKDF2(password, email, 600k iter)
-   Browser: derive masterPasswordHash = PBKDF2(masterKey, password, 1 iter)
-   Browser: generate RSA-OAEP 2048-bit keypair
-   Browser: encrypt private key with symmetric key derived from masterKey
-   Browser: send masterPasswordHash + encrypted keys to server
-   Server: bcrypt(masterPasswordHash) → stored as password_hash
-   Server: creates User + default Organization + OrgMembership (owner role)
-   Server: returns session token
+   User submits email + password
+   → Backend hashes password (bcrypt, 12 rounds)
+   → Creates User record
+   → Creates default Organization + OrgMembership (owner role)
+   → Returns session token
    ```
 
 2. **Login**:
    ```
-   Browser: GET /api/auth/prelogin?email=... → returns KDF iterations
-   Browser: derive masterKey + masterPasswordHash (same as registration)
-   Browser: send masterPasswordHash to server
-   Server: verifies bcrypt(masterPasswordHash) against stored hash
-   Server: creates Session record (expires in 72 hours)
-   Server: returns token + encrypted private key + public key
-   Browser: decrypts private key → unwraps org key → stores in memory
+   User submits email + password
+   → Backend verifies password hash
+   → Creates Session record with random token
+   → Sets expiration (30 days)
+   → Returns token
    ```
 
 3. **Authenticated Requests**:
