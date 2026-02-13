@@ -31,13 +31,11 @@ docker compose up -d --build
 
 Open `http://localhost:3000` and register a new account.
 
-See the full [Master Documentation](https://github.com/DEADSEC-SECURITY/family-vault/blob/main/DOCS.md) for comprehensive coverage of all features.
-
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui |
 | Backend | Python 3.13, FastAPI, SQLAlchemy 2.0, Alembic |
 | Database | PostgreSQL 17 |
 | Storage | MinIO (S3-compatible), AES-256-GCM encrypted |

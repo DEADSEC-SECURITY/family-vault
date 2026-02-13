@@ -3,18 +3,18 @@ name: Publish Docker Images
 on:
   push:
     branches:
-      - main
+      - master
     tags:
       - 'v*'
   pull_request:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 env:
   REGISTRY: docker.io
-  BACKEND_IMAGE_NAME: familyvault/backend
-  FRONTEND_IMAGE_NAME: familyvault/frontend
+  BACKEND_IMAGE_NAME: elgon2003/family-vault-backend
+  FRONTEND_IMAGE_NAME: elgon2003/family-vault-frontend
 
 jobs:
   build-and-push-backend:

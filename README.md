@@ -2,8 +2,8 @@
 
 > A self-hostable "Family Operating System" for securely managing IDs, insurance, business documents, and important family information.
 
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://hub.docker.com/r/elgon2003/family-vault)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-orange.svg)](LICENSE)
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Family Vault Dashboard" width="800">
@@ -33,11 +33,24 @@ Family Vault is a secure, self-hosted digital vault that helps families organize
 - 2GB RAM minimum (4GB recommended)
 - 10GB disk space for data storage
 
-### Installation
+### Option A: Docker Hub (Fastest)
+
+Pre-built images are available on [Docker Hub](https://hub.docker.com/r/elgon2003/family-vault):
+
+```bash
+# Download the compose file
+curl -LO https://raw.githubusercontent.com/DEADSEC-SECURITY/family-vault/master/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/DEADSEC-SECURITY/family-vault/master/.env.example
+cp .env.example .env
+# Edit .env and set SECRET_KEY (run: openssl rand -hex 32)
+docker-compose up -d
+```
+
+### Option B: Build from Source
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/family-vault.git
+   git clone https://github.com/DEADSEC-SECURITY/family-vault.git
    cd family-vault
    ```
 
@@ -62,7 +75,7 @@ That's it! Your Family Vault is now running locally.
 
 Family Vault consists of four main services:
 
-- **Frontend** - Next.js 15 with React, TypeScript, and Tailwind CSS
+- **Frontend** - Next.js 16 with React, TypeScript, and Tailwind CSS
 - **Backend** - Python FastAPI with SQLAlchemy 2.0
 - **Database** - PostgreSQL 17
 - **File Storage** - MinIO (S3-compatible object storage)
@@ -73,7 +86,7 @@ All services run in Docker containers and can be easily deployed together or sca
 
 | Component | Technology |
 |-----------|-----------|
-| Frontend Framework | Next.js 15 (App Router) |
+| Frontend Framework | Next.js 16 (App Router) |
 | UI Components | shadcn/ui + Tailwind CSS |
 | Backend API | Python FastAPI |
 | Database | PostgreSQL 17 |
@@ -314,13 +327,19 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Business Source License 1.1** (BSL 1.1).
+
+- **Personal / non-commercial use**: Free, no restrictions
+- **Commercial use**: Requires a commercial license — [contact us](https://github.com/DEADSEC-SECURITY/family-vault/issues)
+- **Change Date**: February 12, 2030 — on this date, the code automatically converts to **GPL v2.0** (fully open-source)
+
+See the [LICENSE](LICENSE) file for full details.
 
 ## Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/family-vault/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/family-vault/discussions)
+- **Issues**: [GitHub Issues](https://github.com/DEADSEC-SECURITY/family-vault/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/DEADSEC-SECURITY/family-vault/discussions)
 
 ## Acknowledgments
 
