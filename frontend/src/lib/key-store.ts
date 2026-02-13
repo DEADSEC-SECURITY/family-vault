@@ -102,12 +102,22 @@ class KeyStore {
 
   // ── Lifecycle ────────────────────────────────────────────────
 
-  /** Clear all keys from memory. Call on logout. */
+  /**
+   * Clear all keys from memory. Call on logout.
+   * Best-effort: zero out Uint8Array buffers before releasing references.
+   * CryptoKey objects are opaque (can't zero internals), but nullifying
+   * references lets the GC reclaim them promptly.
+   */
   clear(): void {
     this.masterKey = null;
     this.symmetricKey = null;
     this.privateKey = null;
     this.publicKey = null;
+
+    // Zero out org key byte arrays before clearing the map
+    for (const key of this.orgKeys.values()) {
+      key.fill(0);
+    }
     this.orgKeys.clear();
   }
 

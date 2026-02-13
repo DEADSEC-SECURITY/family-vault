@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session as DBSession
 from uuid import uuid4
 
+from app.audit.service import log_audit
 from app.auth.models import User
 from app.auth.schemas import (
     AcceptInviteRequest,
@@ -64,7 +65,7 @@ def prelogin(data: PreloginRequest, db: DBSession = Depends(get_db)):
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(data: UserCreate, db: DBSession = Depends(get_db)):
+def register(data: UserCreate, request: Request, db: DBSession = Depends(get_db)):
     existing = get_user_by_email(db, data.email.lower().strip())
     if existing:
         raise HTTPException(
@@ -121,6 +122,11 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
 
     session = create_session(db, user.id)
 
+    ip = request.client.host if request.client else None
+    log_audit(db, action="register", user_id=user.id, org_id=org.id,
+              detail=f"User registered (ZK={is_zk})", ip_address=ip)
+    db.commit()
+
     return TokenResponse(
         token=session.token,
         user=UserResponse(
@@ -141,20 +147,26 @@ def register(data: UserCreate, db: DBSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(data: UserLogin, db: DBSession = Depends(get_db)):
+def login(data: UserLogin, request: Request, db: DBSession = Depends(get_db)):
     user = get_user_by_email(db, data.email.lower().strip())
 
     # Zero-knowledge mode: verify master_password_hash, else verify raw password
     is_zk = data.master_password_hash is not None
     auth_value = data.master_password_hash if is_zk else data.password
 
+    ip = request.client.host if request.client else None
+
     if not user or not verify_password(auth_value, user.password_hash):
+        log_audit(db, action="login_failed", detail=f"Failed login for {data.email}",
+                  ip_address=ip)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     session = create_session(db, user.id)
+    log_audit(db, action="login", user_id=user.id, ip_address=ip)
     orgs = get_user_orgs(db, user.id)
     active_org_id = orgs[0].id if orgs else None
 
@@ -219,6 +231,7 @@ def me(
 def store_org_key(
     org_id: str,
     data: OrgKeyExchange,
+    request: Request,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
@@ -256,6 +269,9 @@ def store_org_key(
         )
         db.add(member_key)
 
+    ip = request.client.host if request.client else None
+    log_audit(db, action="key_ceremony", user_id=user.id, org_id=org_id,
+              detail=f"Granted vault access to user {data.user_id}", ip_address=ip)
     db.commit()
     return {"message": "Org key stored successfully"}
 
@@ -446,6 +462,7 @@ def validate_reset(
 @router.post("/reset-password")
 def reset_password_endpoint(
     data: ResetPasswordRequest,
+    request: Request,
     db: DBSession = Depends(get_db),
 ):
     """Reset password using a valid token.
@@ -466,6 +483,8 @@ def reset_password_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    ip = request.client.host if request.client else None
+
     # Update zero-knowledge keys if provided
     if is_zk and data.encrypted_private_key:
         token_obj = validate_reset_token(db, data.token)
@@ -477,6 +496,22 @@ def reset_password_endpoint(
                     user.recovery_encrypted_private_key = data.recovery_encrypted_private_key
                 if data.kdf_iterations:
                     user.kdf_iterations = data.kdf_iterations
+                # Invalidate all sessions on password reset
+                from app.auth.models import Session as SessionModel
+                db.query(SessionModel).filter(SessionModel.user_id == user.id).delete()
+                log_audit(db, action="password_reset", user_id=user.id,
+                          detail="Password reset (ZK), all sessions invalidated", ip_address=ip)
+                db.commit()
+    else:
+        # Legacy mode: also invalidate sessions
+        token_obj = validate_reset_token(db, data.token)
+        if token_obj:
+            user = get_user_by_email(db, token_obj.email)
+            if user:
+                from app.auth.models import Session as SessionModel
+                db.query(SessionModel).filter(SessionModel.user_id == user.id).delete()
+                log_audit(db, action="password_reset", user_id=user.id,
+                          detail="Password reset (legacy), all sessions invalidated", ip_address=ip)
                 db.commit()
 
     return {"message": "Password reset successfully"}
@@ -488,13 +523,18 @@ def reset_password_endpoint(
 @router.post("/change-password")
 def change_password(
     data: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
+    authorization: str | None = Header(None),
 ):
     """Change password for the currently logged-in user.
 
     In zero-knowledge mode, client sends old and new master_password_hash
     along with re-encrypted private key.
+
+    After password change, all other sessions for this user are invalidated
+    (the current session is preserved).
     """
     is_zk = data.current_master_password_hash is not None
 
@@ -525,6 +565,17 @@ def change_password(
 
         user.password_hash = hash_password(data.new_password)
 
+    # Invalidate all other sessions for this user (keep current session)
+    current_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+    from app.auth.models import Session as SessionModel
+    query = db.query(SessionModel).filter(SessionModel.user_id == user.id)
+    if current_token:
+        query = query.filter(SessionModel.token != current_token)
+    query.delete()
+
+    ip = request.client.host if request.client else None
+    log_audit(db, action="password_change", user_id=user.id,
+              detail="Password changed, other sessions invalidated", ip_address=ip)
     db.commit()
 
     return {"message": "Password changed successfully"}
