@@ -184,8 +184,9 @@ describe("AcceptInvitePage", () => {
       kdf_iterations: 600000,
     });
 
-    // Click to proceed to dashboard
-    await user.click(screen.getByRole("button", { name: /saved my recovery key/i }));
+    // Check the recovery confirmation checkbox, then click Continue
+    await user.click(screen.getByRole("checkbox", { name: /saved my recovery key/i }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(mockPush).toHaveBeenCalledWith("/dashboard");
   });
 

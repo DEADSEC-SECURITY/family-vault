@@ -172,7 +172,7 @@ function AcceptInviteContent() {
 
   // Show recovery key after successful acceptance
   if (recoveryKey) {
-    return <RecoveryCodesCard recoveryKey={recoveryKey} message={"A vault admin still needs to grant you access to the encrypted data. You&apos;ll be notified when access is ready."} />;
+    return <RecoveryCodesCard recoveryKey={recoveryKey} message={"A vault admin still needs to grant you access to the encrypted data. You'll be notified when access is ready."} confirmRecovery={() => router.push("/dashboard")} />;
   }
 
   return (
