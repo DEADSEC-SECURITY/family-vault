@@ -146,31 +146,93 @@ Then remove the `postgres` and `minio` services from `docker-compose.yml`.
 
 ## Security
 
-### Zero-Knowledge Encryption
+### Zero-Knowledge Architecture
 
-Family Vault uses a zero-knowledge architecture — the server never sees your plaintext data:
+Family Vault is designed so the server **never** sees your plaintext data. All encryption and decryption happens client-side in the browser using the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API). A fully compromised server — database dump, file storage, and application code — reveals nothing but encrypted blobs.
 
-1. **Client-Side Key Derivation** - Your master password is used to derive encryption keys entirely in your browser (PBKDF2, 600k iterations)
-2. **RSA Key Pairs** - Each user gets an RSA-OAEP 2048-bit keypair; the private key is encrypted with your master password
-3. **Organization Keys** - AES-256-GCM org keys are wrapped with each member's RSA public key
-4. **Client-Side Encryption** - All item fields and files are encrypted/decrypted in the browser before being sent to the server
-5. **Zero-Knowledge Storage** - The server stores only encrypted blobs — even a compromised server cannot read your data
+### Key Hierarchy
 
-### Authentication
+```
+Master Password
+│
+├─► PBKDF2 (600,000 iterations, salt = email)
+│   └─► Master Key (256-bit)
+│       ├─► HKDF ("enc") ──► Symmetric Key ── encrypts your RSA private key
+│       ├─► HKDF ("mac") ──► MAC Key (reserved for future integrity checks)
+│       └─► PBKDF2 (1 iteration) ──► Master Password Hash ── sent to server
+│
+├─► Per-User RSA-OAEP 2048-bit Keypair
+│   ├─► Public key: stored plaintext on server
+│   └─► Private key: AES-256-GCM encrypted with Symmetric Key, stored on server
+│
+└─► Organization Key (AES-256-GCM, 256-bit)
+    └─► Wrapped per-member with their RSA public key ── stored in org_member_keys
+```
 
-- Zero-knowledge auth: server only receives a hash-of-hash (never your password or master key)
-- Password verification with bcrypt (12 rounds) on the master password hash
-- Session-based authentication with opaque tokens
-- Session tokens expire after 72 hours of inactivity
-- All API endpoints require authentication
+**What the server stores**: encrypted private keys, public keys, encrypted org keys, and encrypted data blobs. **What the server never sees**: your master password, master key, symmetric key, plaintext private key, plaintext org key, or any plaintext item/file data.
+
+### How Data Is Protected
+
+| Data | Encryption | Where |
+|------|-----------|-------|
+| Item fields (names, IDs, policy numbers) | AES-256-GCM with org key | Encrypted in browser, ciphertext stored in DB |
+| File attachments (card images, documents) | AES-256-GCM with org key (unique IV per file) | Encrypted in browser, ciphertext stored in MinIO |
+| User's RSA private key | AES-256-GCM with user's symmetric key | Encrypted blob stored in DB |
+| Org key (per member) | RSA-OAEP wrapped with member's public key | Wrapped blob stored in DB |
+| Master password | PBKDF2 → hash-of-hash → bcrypt | Only bcrypt hash stored in DB |
+
+### Multi-User Key Sharing
+
+When a new member joins an organization:
+
+1. New member generates their RSA keypair on registration
+2. An existing member fetches the new member's public key
+3. Existing member unwraps the org key with their own private key, then re-wraps it with the new member's public key
+4. The newly wrapped org key is stored — the new member can now decrypt all org data
+
+No plaintext keys ever transit the server during this ceremony.
+
+### Authentication Flow
+
+```
+Browser                                          Server
+  │                                                 │
+  ├─ GET /prelogin?email=...  ─────────────────────►│
+  │◄──────────────────── { kdf_iterations: 600000 } │
+  │                                                 │
+  │  derive masterKey = PBKDF2(password, email)     │
+  │  derive masterPasswordHash = PBKDF2(masterKey)  │
+  │                                                 │
+  ├─ POST /login { masterPasswordHash } ───────────►│
+  │                                       bcrypt ── │ ── verify
+  │◄──── { token, encrypted_private_key, pub_key }  │
+  │                                                 │
+  │  decrypt private key with symmetric key         │
+  │  unwrap org key with private key                │
+  │  store keys in memory only (never to disk)      │
+  │                                                 │
+  ├─ GET /items (Authorization: Bearer token) ─────►│
+  │◄──────────────────────── { encrypted fields }   │
+  │  decrypt fields in browser with org key         │
+```
+
+- The server only receives a **hash-of-hash** — never your password or master key
+- Password verification uses **bcrypt** on the master password hash
+- Session tokens are **opaque 256-bit random values**, expiring after 72 hours
+- Keys are held **in memory only** — closing the browser tab wipes them
+
+### Recovery Key
+
+On registration, a 24-word recovery key is generated and shown once. This key independently encrypts a copy of your RSA private key. If you forget your master password, the recovery key can restore access to your data. **Store it offline** — if both are lost, your data is unrecoverable by design.
 
 ### Best Practices
 
-1. **Change the SECRET_KEY** - Use a long random string (minimum 32 characters)
-2. **Use strong passwords** - Enforce strong passwords for all users
-3. **Enable HTTPS** - Use a reverse proxy (nginx, Caddy) with SSL certificates
-4. **Regular backups** - Back up PostgreSQL database and MinIO data regularly
-5. **Keep updated** - Pull the latest Docker images regularly for security patches
+1. **Change the SECRET_KEY** - Use a long random string (`openssl rand -hex 32`)
+2. **Use strong passwords** - The master password protects all your data
+3. **Save your recovery key** - Write it down and store it physically; it cannot be regenerated
+4. **Enable HTTPS** - Use a reverse proxy (nginx, Caddy) with SSL certificates
+5. **Regular backups** - Back up PostgreSQL database and MinIO data regularly
+6. **Keep updated** - Pull the latest Docker images regularly for security patches
 
 ## Features in Detail
 
