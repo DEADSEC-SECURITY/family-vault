@@ -38,13 +38,16 @@ Family Vault is a secure, self-hosted digital vault that helps families organize
 Pre-built images are available on [Docker Hub](https://hub.docker.com/r/elgon2003/family-vault):
 
 ```bash
-# Download the compose file
+# Download the compose file and env template
 curl -LO https://raw.githubusercontent.com/DEADSEC-SECURITY/family-vault/master/docker-compose.yml
 curl -LO https://raw.githubusercontent.com/DEADSEC-SECURITY/family-vault/master/.env.example
 cp .env.example .env
 # Edit .env and set SECRET_KEY (run: openssl rand -hex 32)
+# Optionally set API_URL if the backend isn't on localhost
 docker-compose up -d
 ```
+
+The frontend image supports runtime API URL configuration via the `API_URL` environment variable. Set it in `.env` to point to your backend (e.g., `API_URL=http://192.168.1.10:8000/api` for a NAS deployment).
 
 ### Option B: Build from Source
 
@@ -62,7 +65,7 @@ docker-compose up -d
 
 3. **Start the application**
    ```bash
-   docker-compose up -d
+   docker-compose -f docker-compose.dev.yml up -d
    ```
 
 4. **Access Family Vault**
