@@ -115,4 +115,4 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
           build-args: |
-            NEXT_PUBLIC_API_URL=http://localhost:8000/api
+            NEXT_PUBLIC_API_URL=http://PLACEHOLDER_API_URL/api

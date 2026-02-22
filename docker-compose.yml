@@ -35,6 +35,7 @@ services:
       retries: 5
 
   backend:
+    image: elgon2003/family-vault-backend:latest
     build: ./backend
     ports:
       - "8000:8000"
@@ -62,12 +63,15 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: elgon2003/family-vault-frontend:latest
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000/api}
+        NEXT_PUBLIC_API_URL: http://PLACEHOLDER_API_URL/api
         # Uncomment to enable auto-detect debug visualisation in the image editor
         # NEXT_PUBLIC_DEBUG_DETECT: "true"
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000/api}
     ports:
       - "3000:3000"
     depends_on:
