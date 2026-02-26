@@ -33,7 +33,7 @@ const personalItems: NavItem[] = [
   { href: "/ids", label: "Family IDs", icon: IdCard },
   { href: "/insurance", label: "Insurance", icon: ShieldCheck },
   { href: "/personal-taxes", label: "Taxes", icon: FileText },
-  { href: "/security-codes", label: "Security Codes", icon: KeyRound },
+  { href: "/security_codes", label: "Security Codes", icon: KeyRound },
 ];
 
 const businessItems: NavItem[] = [
