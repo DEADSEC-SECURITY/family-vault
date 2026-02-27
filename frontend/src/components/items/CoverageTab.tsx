@@ -9,6 +9,9 @@ import {
   MapPin,
   Loader2,
   HelpCircle,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,6 +86,7 @@ function useCoverageData(
   itemId: string,
   coverageDefinition: CoverageDefinition,
   onSaveStatusChange?: (status: "idle" | "saving" | "saved" | "failed") => void,
+  customSectionLabel: string = "Other Coverage",
 ) {
   const [rows, setRows] = useState<CoverageRowIn[]>([]);
   const [limits, setLimits] = useState<PlanLimitIn[]>([]);
@@ -202,6 +206,75 @@ function useCoverageData(
     if (initialized) scheduleSave();
   }
 
+  // Build section lookup from definition
+  const sectionLookup = React.useMemo(() => {
+    const lookup = new Map<string, string>();
+    coverageDefinition.default_rows.forEach((def) => {
+      if (def.section) {
+        lookup.set(def.key, def.section);
+      }
+    });
+    return lookup;
+  }, [coverageDefinition]);
+
+  function getSectionForKey(serviceKey: string): string {
+    return sectionLookup.get(serviceKey) || customSectionLabel;
+  }
+
+  function moveRow(globalIndex: number, direction: "up" | "down") {
+    setRows((prev) => {
+      const row = prev[globalIndex];
+      const rowSection = getSectionForKey(row.service_key);
+
+      // Find indices of rows in the same section
+      const sameSection: number[] = [];
+      for (let i = 0; i < prev.length; i++) {
+        if (getSectionForKey(prev[i].service_key) === rowSection) {
+          sameSection.push(i);
+        }
+      }
+
+      const posInSection = sameSection.indexOf(globalIndex);
+      if (direction === "up" && posInSection <= 0) return prev;
+      if (direction === "down" && posInSection >= sameSection.length - 1) return prev;
+
+      const swapWith = direction === "up"
+        ? sameSection[posInSection - 1]
+        : sameSection[posInSection + 1];
+
+      const updated = [...prev];
+      [updated[globalIndex], updated[swapWith]] = [updated[swapWith], updated[globalIndex]];
+      updated.forEach((r, i) => { r.sort_order = i; });
+      return updated;
+    });
+    scheduleSave();
+  }
+
+  // Group rows by section
+  const rowsBySection = React.useMemo(() => {
+    const sectionMap = new Map<string, { row: CoverageRowIn; globalIndex: number }[]>();
+    const sectionOrder: string[] = [];
+
+    rows.forEach((row, globalIndex) => {
+      const section = getSectionForKey(row.service_key);
+      if (!sectionMap.has(section)) {
+        sectionMap.set(section, []);
+        sectionOrder.push(section);
+      }
+      sectionMap.get(section)!.push({ row, globalIndex });
+    });
+
+    // Ensure custom section is always last
+    const customIdx = sectionOrder.indexOf(customSectionLabel);
+    if (customIdx !== -1 && customIdx !== sectionOrder.length - 1) {
+      sectionOrder.splice(customIdx, 1);
+      sectionOrder.push(customSectionLabel);
+    }
+
+    return { sectionMap, sectionOrder };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, coverageDefinition, customSectionLabel]);
+
   return {
     rows,
     limits,
@@ -210,6 +283,8 @@ function useCoverageData(
     addRow,
     removeRow,
     updateLimit,
+    moveRow,
+    rowsBySection,
   };
 }
 
@@ -267,8 +342,8 @@ function HealthCoverageLayout({
   coverageDefinition: CoverageDefinition;
   onSaveStatusChange?: (status: "idle" | "saving" | "saved" | "failed") => void;
 }) {
-  const { rows, limits, loading, updateRow, addRow, removeRow, updateLimit } =
-    useCoverageData(itemId, coverageDefinition, onSaveStatusChange);
+  const { rows, limits, loading, updateRow, addRow, removeRow, updateLimit, moveRow, rowsBySection } =
+    useCoverageData(itemId, coverageDefinition, onSaveStatusChange, "Other Services");
 
   const [providers, setProviders] = useState<InNetworkProviderType[]>([]);
   const [showProviderForm, setShowProviderForm] = useState(false);
@@ -320,31 +395,6 @@ function HealthCoverageLayout({
     setCustomRowLabel("");
     setAddingCustomRow(false);
   }
-
-  // Group rows by section for health insurance
-  const rowsBySection = React.useMemo(() => {
-    const sectionMap = new Map<string, typeof rows>();
-    const sectionOrder: string[] = [];
-
-    // Get section info from coverage definition
-    const sectionLookup = new Map<string, string>();
-    coverageDefinition.default_rows.forEach((def) => {
-      if (def.section) {
-        sectionLookup.set(def.key, def.section);
-      }
-    });
-
-    rows.forEach((row) => {
-      const section = sectionLookup.get(row.service_key) || "";
-      if (!sectionMap.has(section)) {
-        sectionMap.set(section, []);
-        sectionOrder.push(section);
-      }
-      sectionMap.get(section)!.push(row);
-    });
-
-    return { sectionMap, sectionOrder };
-  }, [rows, coverageDefinition]);
 
   if (loading) {
     return (
@@ -515,7 +565,7 @@ function HealthCoverageLayout({
 
           {/* Service rows grouped by section */}
           {rowsBySection.sectionOrder.map((section, sectionIdx) => {
-            const sectionRows = rowsBySection.sectionMap.get(section) || [];
+            const sectionEntries = rowsBySection.sectionMap.get(section) || [];
             return (
               <React.Fragment key={section || `section-${sectionIdx}`}>
                 {/* Section Header */}
@@ -528,14 +578,33 @@ function HealthCoverageLayout({
                 )}
 
                 {/* Section Rows */}
-                {sectionRows.map((row) => {
-                  const globalIndex = rows.findIndex(r => r.service_key === row.service_key);
+                {sectionEntries.map(({ row, globalIndex }, localIdx) => {
+                  const isFirst = localIdx === 0;
+                  const isLast = localIdx === sectionEntries.length - 1;
                   return (
                     <div
                       key={row.service_key}
                       className="group grid grid-cols-[minmax(180px,1fr)_repeat(6,minmax(90px,1fr))] gap-2 px-6 py-2 border-b last:border-b-0 hover:bg-gray-50/50 items-center"
                     >
                       <div className="flex items-center gap-1.5">
+                        <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => moveRow(globalIndex, "up")}
+                            disabled={isFirst}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mb-0.5"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveRow(globalIndex, "down")}
+                            disabled={isLast}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mt-0.5"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </div>
                         <span className="text-sm text-gray-800">{row.service_label}</span>
                         <button
                           type="button"
@@ -771,10 +840,11 @@ function StandardCoverageLayout({
   coverageDefinition: CoverageDefinition;
   onSaveStatusChange?: (status: "idle" | "saving" | "saved" | "failed") => void;
 }) {
-  const { rows, loading, updateRow, addRow, removeRow } = useCoverageData(
+  const { rows, loading, updateRow, addRow, removeRow, moveRow, rowsBySection } = useCoverageData(
     itemId,
     coverageDefinition,
     onSaveStatusChange,
+    "Other Coverage",
   );
 
   const [addingCustomRow, setAddingCustomRow] = useState(false);
@@ -787,31 +857,6 @@ function StandardCoverageLayout({
     setCustomRowLabel("");
     setAddingCustomRow(false);
   }
-
-  // Group rows by section for auto insurance
-  const rowsBySection = React.useMemo(() => {
-    const sectionMap = new Map<string, typeof rows>();
-    const sectionOrder: string[] = [];
-
-    // Get section info from coverage definition
-    const sectionLookup = new Map<string, string>();
-    coverageDefinition.default_rows.forEach((def) => {
-      if (def.section) {
-        sectionLookup.set(def.key, def.section);
-      }
-    });
-
-    rows.forEach((row) => {
-      const section = sectionLookup.get(row.service_key) || "";
-      if (!sectionMap.has(section)) {
-        sectionMap.set(section, []);
-        sectionOrder.push(section);
-      }
-      sectionMap.get(section)!.push(row);
-    });
-
-    return { sectionMap, sectionOrder };
-  }, [rows, coverageDefinition]);
 
   if (loading) {
     return (
@@ -840,7 +885,7 @@ function StandardCoverageLayout({
 
         {/* Rows grouped by section */}
         {rowsBySection.sectionOrder.map((section, sectionIdx) => {
-          const sectionRows = rowsBySection.sectionMap.get(section) || [];
+          const sectionEntries = rowsBySection.sectionMap.get(section) || [];
           return (
             <React.Fragment key={section || `section-${sectionIdx}`}>
               {/* Section Header */}
@@ -853,14 +898,33 @@ function StandardCoverageLayout({
               )}
 
               {/* Section Rows */}
-              {sectionRows.map((row) => {
-                const globalIndex = rows.findIndex(r => r.service_key === row.service_key);
+              {sectionEntries.map(({ row, globalIndex }, localIdx) => {
+                const isFirst = localIdx === 0;
+                const isLast = localIdx === sectionEntries.length - 1;
                 return (
                   <div
                     key={row.service_key}
                     className="group grid grid-cols-[1fr_150px_150px_200px] gap-2 px-6 py-2 border-b last:border-b-0 hover:bg-gray-50/50 items-center"
                   >
                     <div className="flex items-center gap-1.5">
+                      <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => moveRow(globalIndex, "up")}
+                          disabled={isFirst}
+                          className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mb-0.5"
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveRow(globalIndex, "down")}
+                          disabled={isLast}
+                          className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mt-0.5"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
                       <span className="text-sm text-gray-800">{row.service_label}</span>
                       <button
                         type="button"
@@ -952,10 +1016,11 @@ function LifeCoverageLayout({
   coverageDefinition: CoverageDefinition;
   onSaveStatusChange?: (status: "idle" | "saving" | "saved" | "failed") => void;
 }) {
-  const { rows, loading, updateRow, addRow, removeRow } = useCoverageData(
+  const { rows, loading, updateRow, addRow, removeRow, moveRow, rowsBySection } = useCoverageData(
     itemId,
     coverageDefinition,
     onSaveStatusChange,
+    "Other Details",
   );
 
   const [addingCustomRow, setAddingCustomRow] = useState(false);
@@ -968,31 +1033,6 @@ function LifeCoverageLayout({
     setCustomRowLabel("");
     setAddingCustomRow(false);
   }
-
-  // Group rows by section for life insurance
-  const rowsBySection = React.useMemo(() => {
-    const sectionMap = new Map<string, typeof rows>();
-    const sectionOrder: string[] = [];
-
-    // Get section info from coverage definition
-    const sectionLookup = new Map<string, string>();
-    coverageDefinition.default_rows.forEach((def) => {
-      if (def.section) {
-        sectionLookup.set(def.key, def.section);
-      }
-    });
-
-    rows.forEach((row) => {
-      const section = sectionLookup.get(row.service_key) || "";
-      if (!sectionMap.has(section)) {
-        sectionMap.set(section, []);
-        sectionOrder.push(section);
-      }
-      sectionMap.get(section)!.push(row);
-    });
-
-    return { sectionMap, sectionOrder };
-  }, [rows, coverageDefinition]);
 
   if (loading) {
     return (
@@ -1012,7 +1052,7 @@ function LifeCoverageLayout({
         </div>
 
         {rowsBySection.sectionOrder.map((section, sectionIdx) => {
-          const sectionRows = rowsBySection.sectionMap.get(section) || [];
+          const sectionEntries = rowsBySection.sectionMap.get(section) || [];
           return (
             <React.Fragment key={section || `section-${sectionIdx}`}>
               {/* Section Header */}
@@ -1025,13 +1065,32 @@ function LifeCoverageLayout({
               )}
 
               {/* Section Rows */}
-              {sectionRows.map((row, localIdx) => {
-                const globalIndex = rows.findIndex(r => r.service_key === row.service_key);
+              {sectionEntries.map(({ row, globalIndex }, localIdx) => {
+                const isFirst = localIdx === 0;
+                const isLast = localIdx === sectionEntries.length - 1;
                 return (
                   <div key={row.service_key}>
                     {localIdx > 0 && <Separator />}
                     <div className="group flex items-center gap-4 px-6 py-4 min-h-[56px] hover:bg-gray-50/50">
                       <div className="flex items-center gap-1.5 w-44 shrink-0">
+                        <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => moveRow(globalIndex, "up")}
+                            disabled={isFirst}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mb-0.5"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveRow(globalIndex, "down")}
+                            disabled={isLast}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed -mt-0.5"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </div>
                         <span className="text-sm font-medium text-gray-600">{row.service_label}</span>
                         <button
                           type="button"
