@@ -1,6 +1,7 @@
 const TOKEN_KEY = "familyvault_token";
 const USER_KEY = "familyvault_user";
 const ORG_KEY = "familyvault_org_id";
+const ZK_KEY = "familyvault_zk";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -15,6 +16,20 @@ export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(ORG_KEY);
+  localStorage.removeItem(ZK_KEY);
+}
+
+export function setZeroKnowledge(enabled: boolean): void {
+  if (enabled) {
+    localStorage.setItem(ZK_KEY, "1");
+  } else {
+    localStorage.removeItem(ZK_KEY);
+  }
+}
+
+export function isZeroKnowledge(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(ZK_KEY) === "1";
 }
 
 export interface User {

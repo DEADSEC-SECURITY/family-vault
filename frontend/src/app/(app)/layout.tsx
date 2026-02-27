@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAuthenticated } from "@/lib/auth";
+import { isAuthenticated, isZeroKnowledge, removeToken } from "@/lib/auth";
+import { keyStore } from "@/lib/key-store";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { PageTransition } from "@/components/layout/PageTransition";
@@ -16,11 +17,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [remindersOpen, setRemindersOpen] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-    } else {
+    function checkSession() {
+      if (!isAuthenticated()) {
+        router.push("/login");
+        return false;
+      }
+      // ZK users need in-memory keys — if lost (tab suspended/discarded), force re-login
+      if (isZeroKnowledge() && !keyStore.isInitialized) {
+        keyStore.clear();
+        removeToken();
+        router.push("/login");
+        return false;
+      }
+      return true;
+    }
+
+    if (checkSession()) {
       setReady(true);
     }
+
+    // Re-check when user returns to a suspended tab
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible" && !checkSession()) {
+        setReady(false);
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [router]);
 
   if (!ready) {

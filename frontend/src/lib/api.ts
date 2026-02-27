@@ -411,12 +411,13 @@ export const api = {
 
       if (isClientEncrypted) {
         const orgKey = getOrgKeyIfAvailable();
-        if (orgKey) {
-          const encryptedBuf = await res.arrayBuffer();
-          const plainBuf = await decryptFile(encryptedBuf, orgKey);
-          const blob = new Blob([plainBuf]);
-          return URL.createObjectURL(blob);
+        if (!orgKey) {
+          throw new Error("Decryption keys unavailable — please log in again");
         }
+        const encryptedBuf = await res.arrayBuffer();
+        const plainBuf = await decryptFile(encryptedBuf, orgKey);
+        const blob = new Blob([plainBuf]);
+        return URL.createObjectURL(blob);
       }
 
       const blob = await res.blob();

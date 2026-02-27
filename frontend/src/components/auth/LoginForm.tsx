@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { setToken, setStoredUser, setActiveOrgId, updateStoredUser } from "@/lib/auth";
+import { setToken, setStoredUser, setActiveOrgId, updateStoredUser, setZeroKnowledge } from "@/lib/auth";
 import { keyStore } from "@/lib/key-store";
 import {
   deriveMasterKey,
@@ -61,6 +61,7 @@ export function LoginForm() {
         // Store session
         setToken(res.token);
         setStoredUser(res.user);
+        setZeroKnowledge(true);
         if (res.user.active_org_id) {
           setActiveOrgId(res.user.active_org_id);
         }

@@ -157,9 +157,13 @@ export function InlineFileZone({
                     setEditingFile(fileInfo);
                   }}
                   onView={async () => {
-                    const url = await api.files.getBlobUrl(existing.id);
-                    window.open(url, "_blank");
-                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    try {
+                      const url = await api.files.getBlobUrl(existing.id);
+                      window.open(url, "_blank");
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    } catch {
+                      window.location.href = "/login";
+                    }
                   }}
                 />
               ) : (
