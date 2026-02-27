@@ -274,34 +274,46 @@ CATEGORIES = {
             "renters_insurance": {
                 "label": "Renters Insurance",
                 "icon": "building",
-                "fields": [
-                    {"key": "provider", "label": "Provider", "type": "provider", "required": True},
-                    {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
-                    {"key": "premium", "label": "Premium", "type": "number", "required": False},
-                    {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
-                        {"value": "monthly", "label": "Monthly"},
-                        {"value": "quarterly", "label": "Quarterly"},
-                        {"value": "semi_annual", "label": "Semi-Annual"},
-                        {"value": "annual", "label": "Annual"},
-                    ]},
-                    {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
-                    {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
-                    {"key": "rental_address", "label": "Rental Address", "type": "textarea", "required": False},
-                    {"key": "rental_type", "label": "Rental Type", "type": "select", "required": False, "options": [
-                        {"value": "apartment", "label": "Apartment"},
-                        {"value": "house", "label": "House"},
-                        {"value": "condo", "label": "Condo"},
-                        {"value": "townhouse", "label": "Townhouse"},
-                        {"value": "room", "label": "Room / Shared Housing"},
-                        {"value": "other", "label": "Other"},
-                    ]},
-                    {"key": "deductible", "label": "Deductible", "type": "number", "required": False},
-                    {"key": "personal_property_limit", "label": "Personal Property Limit", "type": "number", "required": False},
-                    {"key": "liability_limit", "label": "Liability Limit", "type": "number", "required": False},
-                    {"key": "valuation_type", "label": "Valuation Type", "type": "select", "required": False, "options": [
-                        {"value": "replacement_cost", "label": "Replacement Cost"},
-                        {"value": "actual_cash_value", "label": "Actual Cash Value"},
-                    ]},
+                "field_groups": [
+                    {
+                        "label": "Policy Details",
+                        "fields": [
+                            {"key": "provider", "label": "Provider", "type": "provider", "required": True},
+                            {"key": "policy_number", "label": "Policy Number", "type": "text", "required": True, "encrypted": True},
+                            {"key": "premium", "label": "Premium", "type": "number", "required": False},
+                            {"key": "payment_frequency", "label": "Payment Frequency", "type": "select", "required": False, "options": [
+                                {"value": "monthly", "label": "Monthly"},
+                                {"value": "quarterly", "label": "Quarterly"},
+                                {"value": "semi_annual", "label": "Semi-Annual"},
+                                {"value": "annual", "label": "Annual"},
+                            ]},
+                            {"key": "start_date", "label": "Policy Start Date", "type": "date", "required": False},
+                            {"key": "end_date", "label": "Renewal Date", "type": "date", "required": True},
+                            {"key": "rental_type", "label": "Rental Type", "type": "select", "required": False, "options": [
+                                {"value": "apartment", "label": "Apartment"},
+                                {"value": "house", "label": "House"},
+                                {"value": "condo", "label": "Condo"},
+                                {"value": "townhouse", "label": "Townhouse"},
+                                {"value": "room", "label": "Room / Shared Housing"},
+                                {"value": "other", "label": "Other"},
+                            ]},
+                            {"key": "valuation_type", "label": "Valuation Type", "type": "select", "required": False, "options": [
+                                {"value": "replacement_cost", "label": "Replacement Cost"},
+                                {"value": "actual_cash_value", "label": "Actual Cash Value"},
+                            ]},
+                        ]
+                    },
+                    {
+                        "label": "Property Address",
+                        "fields": [
+                            {"key": "address_line_1", "label": "Address Line 1", "type": "text", "required": False},
+                            {"key": "address_line_2", "label": "Address Line 2", "type": "text", "required": False},
+                            {"key": "apt_suite_unit", "label": "Apt/Suite/Unit", "type": "text", "required": False},
+                            {"key": "city", "label": "City", "type": "text", "required": False},
+                            {"key": "state", "label": "State", "type": "select", "required": False, "options": US_STATES},
+                            {"key": "zip_code", "label": "ZIP Code", "type": "text", "required": False},
+                        ]
+                    },
                 ],
                 "file_slots": ["policy_document", "declarations_page", "home_inventory"],
                 "recommended": True,
