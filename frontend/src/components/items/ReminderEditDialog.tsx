@@ -25,7 +25,7 @@ export default function ReminderEditDialog({
   itemId,
   onSaved,
 }: ReminderEditDialogProps) {
-  const isCreateMode = !reminder;
+  const isCreateMode = !reminder || !reminder.id;
 
   const [title, setTitle] = useState(reminder?.field_label || "");
   const [remindDate, setRemindDate] = useState(reminder?.date || "");

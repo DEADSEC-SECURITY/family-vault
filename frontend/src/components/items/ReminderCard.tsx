@@ -103,14 +103,14 @@ export function ReminderCard({
             </span>
           )}
         </div>
-        {reminder.id && (
+        {(onEdit || onDelete) && (
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             {onEdit && (
               <button
                 type="button"
                 onClick={onEdit}
                 className="text-gray-300 hover:text-blue-500 transition-colors"
-                title={reminder.is_auto_generated ? "Edit (will become custom reminder)" : "Edit reminder"}
+                title={!reminder.id ? "Create custom reminder from this date" : reminder.is_auto_generated ? "Edit (will become custom reminder)" : "Edit reminder"}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>

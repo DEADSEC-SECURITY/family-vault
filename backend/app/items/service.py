@@ -8,11 +8,25 @@ from app.categories.definitions import CATEGORIES
 from app.contacts.models import ItemContact
 from app.coverage.models import CoveragePlanLimit, CoverageRow, InNetworkProvider
 from app.files.encryption import decrypt_field, encrypt_field
+from app.item_links.models import ItemLink
 from app.items.models import Item, ItemFieldValue
 from app.items.schemas import FieldValueIn, FieldValueOut, FileOut, ItemResponse
 from app.orgs.models import Organization
 from app.orgs.service import get_org_encryption_key
+from app.people.models import ItemPerson
+from app.saved_contacts.models import ItemSavedContact
 from app.vehicles.models import ItemVehicle
+
+# All insurance subcategories that support renewal
+RENEWABLE_SUBCATEGORIES = {
+    # Personal insurance
+    "auto_insurance", "health_insurance", "homeowners_insurance",
+    "renters_insurance", "life_insurance", "other_insurance",
+    # Business insurance
+    "general_liability", "professional_liability", "workers_compensation",
+    "commercial_property", "commercial_auto", "bop", "cyber_liability",
+    "other_business_insurance",
+}
 
 
 def _get_org_key(db: DBSession, org_id: str) -> bytes:
@@ -128,6 +142,7 @@ def _item_to_response(item: Item, org_key: bytes) -> ItemResponse:
             FileOut(
                 id=f.id,
                 file_name=f.file_name,
+                display_name=f.display_name,
                 file_size=f.file_size,
                 mime_type=f.mime_type,
                 purpose=f.purpose,
@@ -359,15 +374,42 @@ def delete_item(db: DBSession, item_id: str, org_id: str) -> None:
     db.commit()
 
 
+def _compute_renewal_duration(old_item: Item) -> int:
+    """Calculate renewal duration in days from the old item's start/end dates.
+
+    Falls back to 365 days if dates cannot be parsed.
+    """
+    from datetime import datetime
+
+    start_val = end_val = None
+    for fv in old_item.field_values:
+        if fv.field_key == "start_date":
+            start_val = fv.field_value
+        elif fv.field_key == "end_date":
+            end_val = fv.field_value
+
+    if start_val and end_val:
+        try:
+            start_d = datetime.fromisoformat(start_val).date()
+            end_d = datetime.fromisoformat(end_val).date()
+            duration = (end_d - start_d).days
+            if duration > 0:
+                return duration
+        except (ValueError, TypeError):
+            pass
+
+    return 365  # default: 1 year
+
+
 def renew_item(
     db: DBSession, item_id: str, org_id: str, user_id: str
 ) -> ItemResponse:
-    """Renew an auto insurance policy.
+    """Renew an insurance policy.
 
     1. Set old item's end_date to today and archive it.
-    2. Create a new item with same settings (provider, policy_number, premium),
-       start_date=today, end_date=today+6months.
-    3. Copy vehicles, contacts, coverage rows, plan limits, and in-network providers.
+    2. Create a new item with same settings, start_date=today,
+       end_date=today + same duration as old policy.
+    3. Copy all relationships: vehicles, contacts, coverage, people, saved contacts, links.
     """
     # --- Fetch old item ---
     old_item = (
@@ -383,13 +425,14 @@ def renew_item(
     if not old_item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    if old_item.subcategory != "auto_insurance":
+    if old_item.subcategory not in RENEWABLE_SUBCATEGORIES:
         raise HTTPException(
-            status_code=400, detail="Only auto insurance items can be renewed"
+            status_code=400, detail="This item type cannot be renewed"
         )
 
     today = date.today()
-    end_date = today + timedelta(days=183)  # ~6 months
+    duration = _compute_renewal_duration(old_item)
+    end_date = today + timedelta(days=duration)
 
     # --- Archive old item: set end_date to today ---
     for fv in old_item.field_values:
@@ -410,12 +453,9 @@ def renew_item(
     db.flush()
 
     # --- Copy field values with date overrides ---
-    sub_def = CATEGORIES.get(old_item.category, {}).get(
-        "subcategories", {}
-    ).get(old_item.subcategory, {})
-    field_types = {f["key"]: f["type"] for f in sub_def.get("fields", [])}
+    sub_def = _get_subcategory_def(old_item.category, old_item.subcategory) or {}
+    field_types = {f["key"]: f["type"] for f in _get_all_fields(sub_def)} if sub_def else {}
 
-    # Fields to copy from old item (everything except dates)
     date_overrides = {
         "start_date": today.isoformat(),
         "end_date": end_date.isoformat(),
@@ -452,12 +492,9 @@ def renew_item(
         .all()
     )
     for iv in old_vehicles:
-        new_iv = ItemVehicle(
-            item_id=new_item.id,
-            vehicle_id=iv.vehicle_id,
-            org_id=org_id,
-        )
-        db.add(new_iv)
+        db.add(ItemVehicle(
+            item_id=new_item.id, vehicle_id=iv.vehicle_id, org_id=org_id,
+        ))
 
     # --- Copy contacts ---
     old_contacts = (
@@ -466,20 +503,14 @@ def renew_item(
         .all()
     )
     for c in old_contacts:
-        new_c = ItemContact(
-            item_id=new_item.id,
-            org_id=org_id,
-            label=c.label,
-            value=c.value,
-            contact_type=c.contact_type,
+        db.add(ItemContact(
+            item_id=new_item.id, org_id=org_id,
+            label=c.label, value=c.value, contact_type=c.contact_type,
             sort_order=c.sort_order,
-            address_line1=c.address_line1,
-            address_line2=c.address_line2,
-            address_city=c.address_city,
-            address_state=c.address_state,
+            address_line1=c.address_line1, address_line2=c.address_line2,
+            address_city=c.address_city, address_state=c.address_state,
             address_zip=c.address_zip,
-        )
-        db.add(new_c)
+        ))
 
     # --- Copy coverage rows ---
     old_rows = (
@@ -488,67 +519,82 @@ def renew_item(
         .all()
     )
     for row in old_rows:
-        new_row = CoverageRow(
-            item_id=new_item.id,
-            org_id=org_id,
-            service_key=row.service_key,
-            service_label=row.service_label,
+        db.add(CoverageRow(
+            item_id=new_item.id, org_id=org_id,
+            service_key=row.service_key, service_label=row.service_label,
             sort_order=row.sort_order,
-            in_copay=row.in_copay,
-            in_coinsurance=row.in_coinsurance,
-            in_deductible_applies=row.in_deductible_applies,
-            in_notes=row.in_notes,
-            out_copay=row.out_copay,
-            out_coinsurance=row.out_coinsurance,
-            out_deductible_applies=row.out_deductible_applies,
-            out_notes=row.out_notes,
-            coverage_limit=row.coverage_limit,
-            deductible=row.deductible,
+            in_copay=row.in_copay, in_coinsurance=row.in_coinsurance,
+            in_deductible_applies=row.in_deductible_applies, in_notes=row.in_notes,
+            out_copay=row.out_copay, out_coinsurance=row.out_coinsurance,
+            out_deductible_applies=row.out_deductible_applies, out_notes=row.out_notes,
+            coverage_limit=row.coverage_limit, deductible=row.deductible,
             notes=row.notes,
-        )
-        db.add(new_row)
+        ))
 
     # --- Copy coverage plan limits ---
     old_limits = (
         db.query(CoveragePlanLimit)
-        .filter(
-            CoveragePlanLimit.item_id == item_id,
-            CoveragePlanLimit.org_id == org_id,
-        )
+        .filter(CoveragePlanLimit.item_id == item_id, CoveragePlanLimit.org_id == org_id)
         .all()
     )
     for lim in old_limits:
-        new_lim = CoveragePlanLimit(
-            item_id=new_item.id,
-            org_id=org_id,
-            limit_key=lim.limit_key,
-            limit_label=lim.limit_label,
-            limit_value=lim.limit_value,
-            sort_order=lim.sort_order,
-        )
-        db.add(new_lim)
+        db.add(CoveragePlanLimit(
+            item_id=new_item.id, org_id=org_id,
+            limit_key=lim.limit_key, limit_label=lim.limit_label,
+            limit_value=lim.limit_value, sort_order=lim.sort_order,
+        ))
 
     # --- Copy in-network providers ---
     old_providers = (
         db.query(InNetworkProvider)
-        .filter(
-            InNetworkProvider.item_id == item_id,
-            InNetworkProvider.org_id == org_id,
-        )
+        .filter(InNetworkProvider.item_id == item_id, InNetworkProvider.org_id == org_id)
         .all()
     )
     for p in old_providers:
-        new_p = InNetworkProvider(
-            item_id=new_item.id,
+        db.add(InNetworkProvider(
+            item_id=new_item.id, org_id=org_id,
+            provider_name=p.provider_name, specialty=p.specialty,
+            phone=p.phone, address=p.address,
+            network_tier=p.network_tier, notes=p.notes,
+        ))
+
+    # --- Copy linked people ---
+    old_people = (
+        db.query(ItemPerson)
+        .filter(ItemPerson.item_id == item_id, ItemPerson.org_id == org_id)
+        .all()
+    )
+    for ip in old_people:
+        db.add(ItemPerson(
+            item_id=new_item.id, person_id=ip.person_id,
+            role=ip.role, org_id=org_id,
+        ))
+
+    # --- Copy linked saved contacts ---
+    old_saved = (
+        db.query(ItemSavedContact)
+        .filter(ItemSavedContact.item_id == item_id, ItemSavedContact.org_id == org_id)
+        .all()
+    )
+    for isc in old_saved:
+        db.add(ItemSavedContact(
+            item_id=new_item.id, saved_contact_id=isc.saved_contact_id,
             org_id=org_id,
-            provider_name=p.provider_name,
-            specialty=p.specialty,
-            phone=p.phone,
-            address=p.address,
-            network_tier=p.network_tier,
-            notes=p.notes,
-        )
-        db.add(new_p)
+        ))
+
+    # --- Copy parent business link (if this item is a child) ---
+    old_link = (
+        db.query(ItemLink)
+        .filter(ItemLink.child_item_id == item_id, ItemLink.org_id == org_id)
+        .first()
+    )
+    if old_link:
+        db.add(ItemLink(
+            parent_item_id=old_link.parent_item_id,
+            child_item_id=new_item.id,
+            link_type=old_link.link_type,
+            org_id=org_id,
+        ))
 
     db.commit()
     db.refresh(new_item)

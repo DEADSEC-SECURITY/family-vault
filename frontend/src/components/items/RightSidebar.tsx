@@ -716,7 +716,14 @@ export const RightSidebar = React.forwardRef<RightSidebarHandle, RightSidebarPro
       else setBusinessSearch("");
     }
 
-    const showRenewButton = subcategoryKey === "auto_insurance" && !isCreate && !isArchived && !!itemId;
+    const renewableSubcategories = [
+      "auto_insurance", "health_insurance", "homeowners_insurance",
+      "renters_insurance", "life_insurance", "other_insurance",
+      "general_liability", "professional_liability", "workers_compensation",
+      "commercial_property", "commercial_auto", "bop", "cyber_liability",
+      "other_business_insurance",
+    ];
+    const showRenewButton = renewableSubcategories.includes(subcategoryKey || "") && !isCreate && !isArchived && !!itemId;
     const bizInsuranceTypes = [
       "general_liability", "professional_liability", "workers_compensation",
       "commercial_property", "commercial_auto", "bop", "cyber_liability",
@@ -755,9 +762,9 @@ export const RightSidebar = React.forwardRef<RightSidebarHandle, RightSidebarPro
                 <AlertDialogTitle>Renew Policy?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This will archive the current policy and create a new one with
-                  today&apos;s start date and renewal date 6 months from now. Vehicles,
-                  contacts, and coverage will be copied. The insurance card will
-                  need to be re-uploaded.
+                  today&apos;s start date and the same coverage duration. Contacts,
+                  coverage, and linked people will be copied. File attachments
+                  will need to be re-uploaded.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1032,7 +1039,14 @@ export const RightSidebar = React.forwardRef<RightSidebarHandle, RightSidebarPro
                   reminder={r}
                   variant="sidebar"
                   showItemLink={false}
-                  onEdit={r.id ? () => setEditingReminder(r) : undefined}
+                  onEdit={() => {
+                    if (r.id) {
+                      setEditingReminder(r);
+                    } else {
+                      // Auto-detected: open create dialog pre-filled with detected data
+                      setEditingReminder({ ...r, id: undefined } as Reminder);
+                    }
+                  }}
                   onDelete={r.id ? () => handleDeleteReminder(r.id!) : undefined}
                 />
               ))}
