@@ -114,6 +114,11 @@ export function Header() {
               <LogOut className="h-4 w-4" />
               Sign Out
             </button>
+            <div className="border-t mt-1 px-3 py-1.5">
+              <p className="text-[10px] text-muted-foreground">
+                {process.env.NEXT_PUBLIC_APP_VERSION || "dev"}
+              </p>
+            </div>
           </PopoverContent>
         </Popover>
       </header>

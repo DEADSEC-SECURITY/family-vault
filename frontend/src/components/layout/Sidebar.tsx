@@ -98,7 +98,14 @@ export function Sidebar({ collapsed, remindersOpen, onToggleReminders }: Sidebar
       {/* Logo */}
       <div className={cn("flex items-center", collapsed ? "justify-center p-3" : "px-6 py-4")}>
         <Link href="/dashboard" className="text-xl font-bold text-gray-900">
-          {collapsed ? "F" : "FamilyVault"}
+          {collapsed ? "F" : (
+            <>
+              FamilyVault
+              <span className="ml-1.5 text-[10px] font-medium text-gray-400">
+                {process.env.NEXT_PUBLIC_APP_VERSION || "dev"}
+              </span>
+            </>
+          )}
         </Link>
       </div>
 

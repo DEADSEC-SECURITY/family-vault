@@ -103,6 +103,15 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Determine app version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push Frontend Docker image
         uses: docker/build-push-action@v5
         with:
@@ -116,3 +125,4 @@ jobs:
           platforms: linux/amd64
           build-args: |
             NEXT_PUBLIC_API_URL=http://PLACEHOLDER_API_URL/api
+            APP_VERSION=${{ steps.version.outputs.value }}
