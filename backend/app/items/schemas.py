@@ -33,6 +33,7 @@ class FieldValueOut(BaseModel):
 class FileOut(BaseModel):
     id: str
     file_name: str
+    display_name: str | None = None
     file_size: int
     mime_type: str
     purpose: str | None

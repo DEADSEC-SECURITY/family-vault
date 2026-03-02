@@ -10,7 +10,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.files.encryption import decrypt_file, encrypt_file
 from app.files.models import FileAttachment
-from app.files.schemas import FileUploadResponse
+from app.files.schemas import FileRenameRequest, FileUploadResponse
 from app.files.storage import get_storage
 from app.items.models import Item
 from app.orgs.models import Organization
@@ -35,6 +35,7 @@ async def upload_file(
     file: UploadFile = File(...),
     item_id: str = Form(...),
     purpose: str | None = Form(None),
+    display_name: str | None = Form(None),
     encryption_version: int = Form(1),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
@@ -64,10 +65,8 @@ async def upload_file(
             detail=f"File type not allowed: {mime_type}",
         )
 
-    # Generate storage key
-    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
-    short_uuid = str(uuid4())[:8]
-    storage_key = f"{org.id}/{item_id}/{purpose or 'file'}_{short_uuid}.{ext}.enc"
+    # Generate storage key — use random UUID only, no user metadata in path
+    storage_key = f"{org.id}/{item_id}/{uuid4()}.enc"
 
     storage = get_storage()
 
@@ -87,10 +86,22 @@ async def upload_file(
         file_size = len(content)
 
     # Save metadata
+    original_name = file.filename or "unnamed"
+
+    # Determine display_name: explicit > slot label > filename without extension
+    if display_name:
+        resolved_display_name = display_name
+    elif purpose and purpose != "other":
+        resolved_display_name = purpose.replace("_", " ").title()
+    else:
+        # Strip extension from filename
+        resolved_display_name = original_name.rsplit(".", 1)[0] if "." in original_name else original_name
+
     attachment = FileAttachment(
         item_id=item_id,
         uploaded_by=user.id,
-        file_name=file.filename or "unnamed",
+        file_name=original_name,
+        display_name=resolved_display_name,
         storage_key=storage_key,
         file_size=file_size,
         mime_type=mime_type,
@@ -106,6 +117,7 @@ async def upload_file(
     return FileUploadResponse(
         id=attachment.id,
         file_name=attachment.file_name,
+        display_name=attachment.display_name,
         file_size=attachment.file_size,
         mime_type=attachment.mime_type,
         purpose=attachment.purpose,
@@ -190,3 +202,37 @@ def delete_file(
 
     db.delete(attachment)
     db.commit()
+
+
+@router.patch("/{file_id}", response_model=FileUploadResponse)
+def rename_file(
+    file_id: str,
+    body: FileRenameRequest,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    org = get_active_org(user, db)
+
+    attachment = (
+        db.query(FileAttachment)
+        .join(Item)
+        .filter(FileAttachment.id == file_id, Item.org_id == org.id)
+        .first()
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    attachment.display_name = body.display_name
+    db.commit()
+    db.refresh(attachment)
+
+    return FileUploadResponse(
+        id=attachment.id,
+        file_name=attachment.file_name,
+        display_name=attachment.display_name,
+        file_size=attachment.file_size,
+        mime_type=attachment.mime_type,
+        purpose=attachment.purpose,
+        encryption_version=attachment.encryption_version,
+        created_at=attachment.created_at.isoformat(),
+    )

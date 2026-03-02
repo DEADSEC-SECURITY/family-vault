@@ -374,7 +374,7 @@ export const api = {
     },
   },
   files: {
-    upload: async (itemId: string, file: File, purpose?: string) => {
+    upload: async (itemId: string, file: File, purpose?: string, displayName?: string) => {
       const orgKey = getOrgKeyIfAvailable();
       const formData = new FormData();
 
@@ -391,6 +391,7 @@ export const api = {
 
       formData.append("item_id", itemId);
       if (purpose) formData.append("purpose", purpose);
+      if (displayName) formData.append("display_name", displayName);
 
       return fetchAPI<FileResponse>("/files/upload", {
         method: "POST",
@@ -425,6 +426,11 @@ export const api = {
     },
     delete: (id: string) =>
       fetchAPI<void>(`/files/${id}`, { method: "DELETE" }),
+    rename: (id: string, displayName: string) =>
+      fetchAPI<FileResponse>(`/files/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: displayName }),
+      }),
   },
   reminders: {
     list: () => fetchAPI<Reminder[]>("/reminders"),
@@ -874,6 +880,7 @@ export interface FieldValue {
 export interface FileAttachmentType {
   id: string;
   file_name: string;
+  display_name: string | null;
   file_size: number;
   mime_type: string;
   purpose: string | null;
@@ -929,6 +936,7 @@ export interface ItemUpdate {
 export interface FileResponse {
   id: string;
   file_name: string;
+  display_name: string | null;
   file_size: number;
   mime_type: string;
   purpose: string | null;

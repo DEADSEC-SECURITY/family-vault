@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { ImageEditor } from "./ImageEditor";
@@ -15,8 +16,12 @@ interface FileUploaderProps {
 }
 
 export function FileUploader({ itemId, fileSlots, onUploaded }: FileUploaderProps) {
+  // Always include "other" as a slot option
+  const allSlots = fileSlots.includes("other") ? fileSlots : [...fileSlots, "other"];
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [purpose, setPurpose] = useState(fileSlots[0] || "document");
+  const [purpose, setPurpose] = useState(allSlots[0] || "document");
+  const [displayName, setDisplayName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -80,8 +85,14 @@ export function FileUploader({ itemId, fileSlots, onUploaded }: FileUploaderProp
     setError("");
 
     try {
-      await api.files.upload(itemId, selectedFile, purpose);
+      await api.files.upload(
+        itemId,
+        selectedFile,
+        purpose,
+        displayName.trim() || undefined,
+      );
       setSelectedFile(null);
+      setDisplayName("");
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -90,23 +101,38 @@ export function FileUploader({ itemId, fileSlots, onUploaded }: FileUploaderProp
     }
   }
 
+  function slotLabel(slot: string) {
+    return slot.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
   return (
     <div className="space-y-3">
-      {fileSlots.length > 1 && (
+      <div className="space-y-1">
+        <Label htmlFor="purpose-select">File type</Label>
+        <select
+          id="purpose-select"
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+        >
+          {allSlots.map((slot) => (
+            <option key={slot} value={slot}>
+              {slotLabel(slot)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {purpose === "other" && (
         <div className="space-y-1">
-          <Label htmlFor="purpose-select">File type</Label>
-          <select
-            id="purpose-select"
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          >
-            {fileSlots.map((slot) => (
-              <option key={slot} value={slot}>
-                {slot.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-              </option>
-            ))}
-          </select>
+          <Label htmlFor="display-name-input">Document name</Label>
+          <Input
+            id="display-name-input"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g. Supplemental Coverage Letter"
+            className="h-9 text-sm"
+          />
         </div>
       )}
 
