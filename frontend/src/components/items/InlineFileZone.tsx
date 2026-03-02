@@ -9,6 +9,7 @@ import {
   ZoomIn,
   Eye,
   Loader2,
+  FileText,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Item } from "@/lib/api";
@@ -98,6 +99,182 @@ function useImageOrientation(blobUrl: string | null): "landscape" | "portrait" |
   return orientation;
 }
 
+/* ──────────────────────── PDF Preview Hook ──────────────────────── */
+
+/** Fetches a PDF and renders its first page as a preview image blob URL */
+function usePdfPreview(fileId: string | undefined, isPdf: boolean) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!fileId || !isPdf) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const blobUrl = await api.files.getBlobUrl(fileId);
+        const res = await fetch(blobUrl);
+        const arrayBuffer = await res.arrayBuffer();
+        URL.revokeObjectURL(blobUrl);
+
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvas, viewport }).promise;
+
+        const blob: Blob = await new Promise((resolve) =>
+          canvas.toBlob((b) => resolve(b!), "image/png"),
+        );
+        const url = URL.createObjectURL(blob);
+
+        if (!cancelled) {
+          urlRef.current = url;
+          setPreviewUrl(url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      } catch {
+        // PDF preview failed — slot will show filename instead
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+    };
+  }, [fileId, isPdf]);
+
+  return previewUrl;
+}
+
+/* ──────────────────────── PDF Viewer Overlay ──────────────────────── */
+
+/** Full-screen PDF viewer rendering pages via pdf.js canvases */
+export function PdfViewerOverlay({
+  fileId,
+  label,
+  encryptionVersion,
+  onClose,
+}: {
+  fileId: string;
+  label: string;
+  encryptionVersion?: number;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [pageCount, setPageCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const blobUrl = await api.files.getBlobUrl(fileId, encryptionVersion);
+        const res = await fetch(blobUrl);
+        const arrayBuffer = await res.arrayBuffer();
+        URL.revokeObjectURL(blobUrl);
+
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (cancelled) return;
+
+        setPageCount(pdf.numPages);
+        setLoading(false);
+
+        // Render each page into the scroll container
+        const container = containerRef.current;
+        if (!container) return;
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          if (cancelled) break;
+          const page = await pdf.getPage(i);
+          // Scale to fit ~800px wide
+          const baseViewport = page.getViewport({ scale: 1 });
+          const scale = Math.min(800 / baseViewport.width, 3);
+          const viewport = page.getViewport({ scale });
+
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.className = "mx-auto shadow-lg";
+          canvas.style.marginBottom = "12px";
+          canvas.style.borderRadius = "4px";
+
+          container.appendChild(canvas);
+          await page.render({ canvas, viewport }).promise;
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [fileId, encryptionVersion]);
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* Header bar */}
+      <div
+        className="flex items-center justify-between px-4 py-2 bg-black/50 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <p className="text-white text-sm font-medium truncate">{label}</p>
+          {pageCount > 0 && (
+            <span className="text-white/60 text-xs">{pageCount} page{pageCount !== 1 ? "s" : ""}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-colors"
+        >
+          <X className="h-4 w-4 text-white" />
+        </button>
+      </div>
+
+      {/* Scrollable PDF pages */}
+      <div
+        className="flex-1 overflow-y-auto py-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {loading && (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="h-8 w-8 text-white animate-spin" />
+          </div>
+        )}
+        <div ref={containerRef} className="px-4" />
+      </div>
+    </div>
+  );
+}
+
 /* ──────────────────────── InlineFileZone ──────────────────────── */
 
 export function InlineFileZone({
@@ -122,6 +299,9 @@ export function InlineFileZone({
   const [editorOpen, setEditorOpen] = useState(false);
   const lightboxOrientation = useImageOrientation(lightboxUrl);
 
+  // PDF viewer state
+  const [pdfViewer, setPdfViewer] = useState<{ fileId: string; label: string; encryptionVersion?: number } | null>(null);
+
   async function handleEditSave(blob: Blob) {
     if (!editingFile) return;
     const editedFile = createFileFromBlob(blob, editingFile.name);
@@ -143,6 +323,7 @@ export function InlineFileZone({
         {fileSlots.map((slot) => {
           const existing = slotFiles.find((f) => f.purpose === slot);
           const isImage = existing?.mime_type?.startsWith("image/");
+          const isPdf = existing?.mime_type === "application/pdf";
           return (
             <div key={slot}>
               {existing ? (
@@ -150,11 +331,19 @@ export function InlineFileZone({
                   file={existing}
                   slot={slot}
                   isImage={!!isImage}
+                  isPdf={!!isPdf}
                   onDelete={async () => { await api.files.delete(existing.id); onUploaded(); }}
                   onEnlarge={(url, fileInfo) => {
                     setLightboxUrl(url);
                     setLightboxLabel(slotLabel(slot));
                     setEditingFile(fileInfo);
+                  }}
+                  onViewPdf={() => {
+                    setPdfViewer({
+                      fileId: existing.id,
+                      label: existing.display_name || slotLabel(slot),
+                      encryptionVersion: existing.encryption_version,
+                    });
                   }}
                   onView={async () => {
                     try {
@@ -180,7 +369,7 @@ export function InlineFileZone({
         })}
       </div>
 
-      {/* Lightbox overlay */}
+      {/* Image Lightbox overlay */}
       {lightboxUrl && !editorOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -219,6 +408,16 @@ export function InlineFileZone({
         </div>
       )}
 
+      {/* PDF viewer overlay */}
+      {pdfViewer && (
+        <PdfViewerOverlay
+          fileId={pdfViewer.fileId}
+          label={pdfViewer.label}
+          encryptionVersion={pdfViewer.encryptionVersion}
+          onClose={() => setPdfViewer(null)}
+        />
+      )}
+
       {/* Image editor (from lightbox edit) */}
       {editorOpen && lightboxUrl && (
         <ImageEditor
@@ -240,18 +439,23 @@ function FileSlotDisplay({
   file,
   slot,
   isImage,
+  isPdf,
   onDelete,
   onEnlarge,
+  onViewPdf,
   onView,
 }: {
-  file: { id: string; file_name: string; mime_type: string; purpose?: string | null };
+  file: { id: string; file_name: string; display_name?: string | null; mime_type: string; purpose?: string | null; encryption_version?: number };
   slot: string;
   isImage: boolean;
+  isPdf: boolean;
   onDelete: () => void;
   onEnlarge: (blobUrl: string, fileInfo: { id: string; name: string; purpose: string }) => void;
+  onViewPdf: () => void;
   onView: () => void;
 }) {
   const blobUrl = useAuthImage(isImage ? file.id : undefined);
+  const pdfPreviewUrl = usePdfPreview(isPdf ? file.id : undefined, isPdf);
   const isCard = CARD_SLOTS.has(slot);
 
   // For card slots use the appropriate aspect ratio; otherwise fall back to fixed h-40
@@ -283,9 +487,32 @@ function FileSlotDisplay({
         <div className={`w-full ${fallbackH} flex items-center justify-center`} style={containerStyle}>
           <Loader2 className="h-5 w-5 text-gray-300 animate-spin" />
         </div>
+      ) : isPdf && pdfPreviewUrl ? (
+        <div
+          className="relative cursor-pointer overflow-hidden"
+          style={containerStyle}
+          onClick={onViewPdf}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pdfPreviewUrl}
+            alt={slotLabel(slot)}
+            className={`w-full ${fallbackH} object-cover`}
+            style={isCard ? { width: "100%", height: "100%", objectFit: "cover" } : { maxHeight: "10rem", objectFit: "contain", objectPosition: "top" }}
+          />
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+            <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+          </div>
+        </div>
+      ) : isPdf && !pdfPreviewUrl ? (
+        <div className={`w-full ${fallbackH} flex flex-col items-center justify-center cursor-pointer`} style={containerStyle} onClick={onViewPdf}>
+          <Loader2 className="h-5 w-5 text-gray-300 animate-spin" />
+        </div>
       ) : (
-        <div className={`w-full ${fallbackH} flex items-center justify-center`} style={containerStyle}>
-          <p className="text-xs text-gray-500 truncate px-3">{file.file_name}</p>
+        <div className={`w-full ${fallbackH} flex flex-col items-center justify-center gap-1`} style={containerStyle}>
+          <FileText className="h-6 w-6 text-gray-300" />
+          <p className="text-xs text-gray-500 truncate px-3">{file.display_name || file.file_name}</p>
         </div>
       )}
       {/* Label bar with view + delete icons */}
@@ -293,8 +520,8 @@ function FileSlotDisplay({
         <p className="text-[10px] text-gray-500">{slotLabel(slot)}</p>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onView(); }}
-          title="View in browser"
+          onClick={(e) => { e.stopPropagation(); isPdf ? onViewPdf() : onView(); }}
+          title={isPdf ? "View PDF" : "View in browser"}
           className="text-gray-300 hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100"
         >
           <Eye className="h-3 w-3" />
