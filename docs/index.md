@@ -14,6 +14,7 @@ A self-hosted, open-source family document vault for securely managing IDs, insu
 
 | Document | Description |
 |----------|-------------|
+| [Development Setup](development) | Local dev environment, VS Code debugging, Docker tasks |
 | [Architecture](ARCHITECTURE) | System design, database schema, encryption, patterns |
 | [Deployment](DEPLOYMENT) | Docker Compose, cloud platforms, backups, reverse proxy |
 | [API Reference](api-reference) | All backend API endpoints |
@@ -22,12 +23,14 @@ A self-hosted, open-source family document vault for securely managing IDs, insu
 
 ## Getting Started
 
+See the [Development Setup](development) guide for full instructions, or quick start:
+
 ```bash
 git clone https://github.com/DEADSEC-SECURITY/family-vault.git
 cd family-vault
-cp .env.example .env
-docker compose up -d --build
 ```
+
+Then open in VS Code, press `F5`, and select **"Full Stack: Debug All"** — infrastructure starts automatically.
 
 Open `http://localhost:3000` and register a new account.
 

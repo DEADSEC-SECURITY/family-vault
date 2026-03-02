@@ -43,7 +43,11 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "noreply@familyvault.local"
     SMTP_USE_TLS: bool = True
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ("../.env.development", ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

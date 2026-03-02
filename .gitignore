@@ -62,6 +62,7 @@ out/
 .env
 .env.*
 !.env.example
+!.env.development
 *.pem
 *.key
 *.p12
@@ -75,7 +76,6 @@ secrets.yml
 *-secret.json
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo

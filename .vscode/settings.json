@@ -1,0 +1,25 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+
+  // Python testing
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["--tb=short"],
+  "python.testing.cwd": "${workspaceFolder}/backend",
+
+  // Search: exclude noise from results
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/__pycache__": true,
+    "**/.next": true,
+    "**/postgres_data": true,
+    "**/minio_data": true
+  },
+
+  // Files: hide clutter in explorer
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.next": true
+  }
+}
