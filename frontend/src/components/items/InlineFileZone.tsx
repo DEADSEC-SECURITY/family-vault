@@ -60,13 +60,13 @@ function slotAspect(slot: string): number | undefined {
 /* ──────────────────────── Auth Image Hook ──────────────────────── */
 
 /** Loads an image via authenticated fetch and returns an object URL */
-function useAuthImage(fileId: string | undefined) {
+function useAuthImage(fileId: string | undefined, encryptionVersion?: number) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
   useEffect(() => {
     if (!fileId) return;
     let cancelled = false;
-    api.files.getBlobUrl(fileId).then((url) => {
+    api.files.getBlobUrl(fileId, encryptionVersion).then((url) => {
       if (!cancelled) {
         urlRef.current = url;
         setBlobUrl(url);
@@ -81,7 +81,7 @@ function useAuthImage(fileId: string | undefined) {
         urlRef.current = null;
       }
     };
-  }, [fileId]);
+  }, [fileId, encryptionVersion]);
   return blobUrl;
 }
 
@@ -102,7 +102,7 @@ function useImageOrientation(blobUrl: string | null): "landscape" | "portrait" |
 /* ──────────────────────── PDF Preview Hook ──────────────────────── */
 
 /** Fetches a PDF and renders its first page as a preview image blob URL */
-function usePdfPreview(fileId: string | undefined, isPdf: boolean) {
+function usePdfPreview(fileId: string | undefined, isPdf: boolean, encryptionVersion?: number) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
@@ -112,7 +112,7 @@ function usePdfPreview(fileId: string | undefined, isPdf: boolean) {
 
     (async () => {
       try {
-        const blobUrl = await api.files.getBlobUrl(fileId);
+        const blobUrl = await api.files.getBlobUrl(fileId, encryptionVersion);
         const res = await fetch(blobUrl);
         const arrayBuffer = await res.arrayBuffer();
         URL.revokeObjectURL(blobUrl);
@@ -153,7 +153,7 @@ function usePdfPreview(fileId: string | undefined, isPdf: boolean) {
         urlRef.current = null;
       }
     };
-  }, [fileId, isPdf]);
+  }, [fileId, isPdf, encryptionVersion]);
 
   return previewUrl;
 }
@@ -347,7 +347,7 @@ export function InlineFileZone({
                   }}
                   onView={async () => {
                     try {
-                      const url = await api.files.getBlobUrl(existing.id);
+                      const url = await api.files.getBlobUrl(existing.id, existing.encryption_version);
                       window.open(url, "_blank");
                       setTimeout(() => URL.revokeObjectURL(url), 60_000);
                     } catch {
@@ -454,8 +454,8 @@ function FileSlotDisplay({
   onViewPdf: () => void;
   onView: () => void;
 }) {
-  const blobUrl = useAuthImage(isImage ? file.id : undefined);
-  const pdfPreviewUrl = usePdfPreview(isPdf ? file.id : undefined, isPdf);
+  const blobUrl = useAuthImage(isImage ? file.id : undefined, file.encryption_version);
+  const pdfPreviewUrl = usePdfPreview(isPdf ? file.id : undefined, isPdf, file.encryption_version);
   const isCard = CARD_SLOTS.has(slot);
 
   // For card slots use the appropriate aspect ratio; otherwise fall back to fixed h-40
