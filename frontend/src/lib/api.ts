@@ -433,7 +433,8 @@ export const api = {
       }),
   },
   reminders: {
-    list: () => fetchAPI<Reminder[]>("/reminders"),
+    list: (daysAhead: number = 90) =>
+      fetchAPI<Reminder[]>(`/reminders?days_ahead=${daysAhead}`),
     overdue: () => fetchAPI<Reminder[]>("/reminders/overdue"),
     listForItem: (itemId: string) =>
       fetchAPI<Reminder[]>(`/reminders/custom?item_id=${encodeURIComponent(itemId)}`),
