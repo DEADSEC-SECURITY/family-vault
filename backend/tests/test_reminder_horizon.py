@@ -1,4 +1,9 @@
-"""Exercise horizon validation and filtering through the authenticated endpoint."""
+"""Verify the reminder-list contract through authenticated HTTP requests.
+
+Each seeded item has both a date-field reminder and a custom reminder so the
+same cutoff, archive and organization checks cover both reminder sources.
+The shared fixtures isolate database state between parametrized cases.
+"""
 from datetime import date, timedelta
 
 import pytest
@@ -8,6 +13,7 @@ from app.reminders.models import CustomReminder
 
 
 def register(client, email):
+    """Create a synthetic user and return its profile and bearer headers."""
     response = client.post('/api/auth/register', json={
         'email': email, 'password': 'synthetic-test-password', 'full_name': 'Pilot Test',
     })
@@ -17,6 +23,11 @@ def register(client, email):
 
 
 def seed(db, user, offset, archived=False):
+    """Create paired reminders due ``offset`` days from today; return the item ID.
+
+    Negative offsets create overdue records. ``archived`` hides both reminder
+    sources, allowing the endpoint tests to check archive exclusion.
+    """
     item = Item(org_id=user['active_org_id'], created_by=user['id'],
                 category='ids', subcategory='passport', name=f'Encrypted item {offset}',
                 is_archived=archived)
@@ -33,6 +44,7 @@ def seed(db, user, offset, archived=False):
 
 @pytest.mark.parametrize('horizon', [1, 30, 90, 365])
 def test_horizon_inclusive_and_keeps_overdue(client, db, horizon):
+    """Include both sources through the cutoff, retain overdue, and sort by due date."""
     user, headers = register(client, 'range@example.test')
     offsets = [-400, -1, 0, 1, 30, 31, 90, 91, 365, 366]
     ids = {offset: seed(db, user, offset) for offset in offsets}
@@ -47,6 +59,7 @@ def test_horizon_inclusive_and_keeps_overdue(client, db, horizon):
 
 
 def test_default_and_organization_isolation(client, db):
+    """Default to 90 days and exclude records from another active organization."""
     user, headers = register(client, 'one@example.test')
     other, other_headers = register(client, 'two@example.test')
     own_id = seed(db, user, 90)
@@ -62,6 +75,7 @@ def test_default_and_organization_isolation(client, db):
 
 @pytest.mark.parametrize('value', ['0', '-1', '366', '1.5', 'abc', ''])
 def test_invalid_horizon(client, value):
+    """Reject non-integer or out-of-range horizons with a query validation error."""
     _, headers = register(client, 'bounds@example.test')
     response = client.get(f'/api/reminders?days_ahead={value}', headers=headers)
     assert response.status_code == 422
@@ -69,4 +83,5 @@ def test_invalid_horizon(client, value):
 
 
 def test_reminders_require_authentication(client):
+    """Require a session even when the requested horizon is valid."""
     assert client.get('/api/reminders?days_ahead=365').status_code == 401

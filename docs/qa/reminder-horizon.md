@@ -7,6 +7,29 @@ Local verification on 2026-11-13 used base `058502825acdf4f002fa3ed5072ded043d01
 approved screenshots were added afterward. Hosted results belong to the PR's
 checks on its latest head; local results below do not imply hosted CI passed.
 
+## Feature and test contract
+
+On `/reminders`, Date range selects the next 30, 90 (default), or 365 days.
+Changing the range fetches new results; overdue reminders remain visible.
+The selection is page-local and resets to 90 days when the page remounts.
+Loading hides previous results, a failed request offers Try again, and a response
+from an earlier selection cannot replace the current results.
+
+Authenticated clients can call `GET /api/reminders?days_ahead=30`. The optional
+`days_ahead` integer defaults to 90 and accepts 1 through 365 inclusive. The
+cutoff is inclusive, with no lower cutoff for overdue records. Both custom and
+date-field reminders are restricted to the active organization and exclude
+archived items. Invalid values return HTTP 422; unauthenticated calls return 401.
+The separate `/api/reminders/overdue` endpoint is unchanged.
+
+`backend/tests/test_reminder_horizon.py` documents and checks this API contract.
+Its registration helper creates only synthetic accounts. Its seed helper adds
+one date field and one custom reminder per item, with offsets relative to today.
+The parametrized cases cover cutoffs and overdue records for both sources;
+separate cases cover the default, organization isolation, invalid values and
+authentication. Run it from `backend` with
+`pytest tests/test_reminder_horizon.py --tb=short -q`.
+
 ## Local checks
 
 Python **3.12.16**, Node **20.20.2**. Commands run from the repository root
