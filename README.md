@@ -281,6 +281,7 @@ Manage your business entities, licenses, and commercial insurance:
 ### Reminders
 
 Never miss an expiration date:
+- **Date range** - Choose the next 30, 90 (default), or 365 days on the Reminders page. Overdue reminders remain visible in every range. The authenticated `GET /api/reminders` endpoint accepts `days_ahead` from 1 through 365 (inclusive), defaults to 90, and returns HTTP 422 for invalid values. The cutoff date is inclusive.
 - **Auto-detected Reminders** - Automatically tracks expiration dates from your items
 - **Custom Reminders** - Set manual reminders for any item
 - **Email Notifications** - Optional hourly check sends emails when reminders are due

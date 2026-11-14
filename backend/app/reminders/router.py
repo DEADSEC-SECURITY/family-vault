@@ -18,11 +18,12 @@ router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
 @router.get("", response_model=list[CustomReminderOut])
 def list_reminders(
+    days_ahead: int = Query(90, ge=1, le=365),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
     org_id = get_active_org_id(user, db)
-    return get_reminders(db, org_id, days_ahead=90)
+    return get_reminders(db, org_id, days_ahead=days_ahead)
 
 
 @router.get("/overdue", response_model=list[CustomReminderOut])

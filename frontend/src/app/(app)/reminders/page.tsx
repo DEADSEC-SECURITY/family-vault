@@ -11,18 +11,20 @@ export default function RemindersPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  function fetchReminders() {
-    setLoading(true);
-    api.reminders
-      .list()
-      .then(setReminders)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }
+  const [daysAhead, setDaysAhead] = useState(90);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    fetchReminders();
-  }, []);
+    let active = true;
+    setLoading(true);
+    setError(false);
+    api.reminders.list(daysAhead)
+      .then((data) => { if (active) setReminders(data); })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [daysAhead, retry]);
 
   async function handleDelete(id: string) {
     try {
@@ -33,10 +35,6 @@ export default function RemindersPage() {
     }
   }
 
-  if (loading) {
-    return <div className="text-gray-400">Loading...</div>;
-  }
-
   const overdue = reminders.filter((r) => r.is_overdue);
   const upcoming = reminders.filter((r) => !r.is_overdue);
 
@@ -44,6 +42,22 @@ export default function RemindersPage() {
     <div className="max-w-3xl">
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Reminders</h1>
 
+      <div className="mb-6">
+        <label htmlFor="reminder-horizon" className="mr-3 font-medium">Date range</label>
+        <select id="reminder-horizon" value={daysAhead}
+          onChange={(event) => setDaysAhead(Number(event.target.value))}
+          className="rounded border border-gray-300 p-2">
+          <option value={30}>Next 30 days</option>
+          <option value={90}>Next 90 days</option>
+          <option value={365}>Next 365 days</option>
+        </select>
+        <p className="mt-2 text-sm text-gray-500">Overdue reminders are always included.</p>
+      </div>
+      {loading && <p role="status">Loading reminders...</p>}
+      {!loading && error && <div role="alert">
+        Unable to load reminders. <button onClick={() => setRetry((value) => value + 1)}>Try again</button>
+      </div>}
+      {!loading && !error && <>
       {reminders.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
@@ -92,6 +106,7 @@ export default function RemindersPage() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }
